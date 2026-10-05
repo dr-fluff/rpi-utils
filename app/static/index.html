@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f3f4ee">
+  <title>Pi Console</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Pi Console home"><span class="brand-mark">π</span><span>PI<span class="brand-light">CONSOLE</span></span></a>
+    <div class="local-status"><span class="status-dot"></span> LOCAL DEVICE <span class="divider">/</span> <span id="clock">--:--:--</span></div>
+  </header>
+
+  <main>
+    <section class="masthead">
+      <div>
+        <p class="eyebrow">RASPBERRY PI / CONTROL SURFACE</p>
+        <h1>Device<br><span>overview.</span></h1>
+      </div>
+      <div class="masthead-actions">
+        <button class="button button-quiet" id="refresh-button" title="Refresh status"><span aria-hidden="true">↻</span> Refresh</button>
+        <button class="button button-dark" id="update-button"><span aria-hidden="true">⇧</span> Update device</button>
+      </div>
+    </section>
+
+    <section class="overview" aria-label="Device overview">
+      <div class="overview-item"><span class="metric-label">PROGRAMS</span><strong id="program-count">0</strong><span class="metric-note">registered</span></div>
+      <div class="overview-item"><span class="metric-label">ACTIVE</span><strong id="active-count">0</strong><span class="metric-note">running now</span></div>
+      <div class="overview-item ip-item"><span class="metric-label">GLOBAL IP</span><strong id="global-ip">Not checked</strong><button id="ip-button" class="text-action">Check address <span aria-hidden="true">↗</span></button></div>
+    </section>
+
+    <section class="program-section">
+      <div class="section-heading">
+        <div><p class="eyebrow">PROCESS MANAGEMENT</p><h2>Your programs</h2></div>
+        <button class="button button-accent" id="add-button"><span aria-hidden="true">＋</span> Add program</button>
+      </div>
+      <div id="program-list" class="program-list" aria-live="polite"></div>
+      <p id="notice" class="notice" role="status"></p>
+    </section>
+
+    <footer><span>PI CONSOLE <span class="footer-separator">·</span> PRIVATE BY DESIGN</span><span>127.0.0.1:8002</span></footer>
+  </main>
+
+  <dialog id="program-dialog">
+    <form id="program-form">
+      <div class="dialog-heading"><div><p class="eyebrow">NEW PROCESS</p><h2>Add a program</h2></div><button type="button" class="close-button" id="close-dialog" aria-label="Close">×</button></div>
+      <label>Display name<input name="name" required maxlength="80" placeholder="Nightly backup"></label>
+      <label>Command<input name="command" required maxlength="1000" placeholder="/usr/bin/python3 /home/pi/backup.py"></label>
+      <p class="field-hint">Enter the executable and arguments. Commands run directly without a shell.</p>
+      <label>Working directory <span class="optional">OPTIONAL</span><input name="cwd" placeholder="/home/pi/project"></label>
+      <div class="dialog-actions"><button type="button" class="button button-quiet" id="cancel-button">Cancel</button><button class="button button-dark" type="submit">Save program</button></div>
+    </form>
+  </dialog>
+</body>
+</html>

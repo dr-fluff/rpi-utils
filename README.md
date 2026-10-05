@@ -11,7 +11,7 @@ uv sync
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8002
 ```
 
-Open <http://127.0.0.1:8002>. The server binds only to loopback, so it is not available to other devices on the network. To open the dashboard from another computer, use an SSH tunnel rather than changing the bind address:
+Open [http://127.0.0.1:8002](http://127.0.0.1:8002). The server binds only to loopback, so it is not available to other devices on the network. To open the dashboard from another computer, use an SSH tunnel rather than changing the bind address:
 
 ```sh
 ssh -L 8002:127.0.0.1:8002 pi@raspberrypi
@@ -39,8 +39,11 @@ After committing and pushing this version to GitHub, clone it on the Pi and inst
 ```sh
 git clone git@github.com:dr-fluff/rpi-utils.git
 cd rpi-utils
-sudo bash ./install.sh
+chmod +x ./install.sh
+sudo ./install.sh
 ```
+
+The installer uses its Bash shebang; do not invoke it with `sh`.
 
 The script creates a systemd service listening on `127.0.0.1:8002`. Set Telegram variables in `~/.config/rpi-utils/env` before or after installation, then restart the service with `sudo systemctl restart rpi-utils`.
 

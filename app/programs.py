@@ -1,15 +1,31 @@
+import os
 import json
 import re
 import shlex
+import signal
 import subprocess
+import time
 from pathlib import Path
 
 
 def config_path() -> Path:
     configured = Path.home() / ".config" / "rpi-utils" / "programs.json"
-    import os
-
     return Path(os.environ.get("RPI_UTILS_PROGRAMS_FILE", configured))
+
+
+def _process_info(pid: int, proc_root: Path = Path("/proc")) -> dict | None:
+    process_path = proc_root / str(pid)
+    try:
+        command = [part.decode(errors="replace") for part in (process_path / "cmdline").read_bytes().split(b"\0") if part]
+        stat = (process_path / "stat").read_text()
+        stat_fields = stat[stat.rfind(")") + 1 :].split()
+        start_time = int(stat_fields[19])
+        cwd = str((process_path / "cwd").resolve())
+    except (IndexError, OSError, ValueError):
+        return None
+    if not command:
+        return None
+    return {"pid": pid, "command": command, "cwd": cwd, "start_time": start_time}
 
 
 class ProgramManager:
@@ -39,19 +55,70 @@ class ProgramManager:
         result = []
         for program in self._load():
             process = self.processes.get(program["id"])
-            running = process is not None and process.poll() is None
+            if process is not None and process.poll() is None:
+                pid = process.pid
+                running = True
+            else:
+                attached_pid = program.get("attached_pid")
+                attached = _process_info(attached_pid) if isinstance(attached_pid, int) else None
+                running = (
+                    attached is not None
+                    and attached["start_time"] == program.get("attached_start_time")
+                )
+                pid = attached_pid if running else None
             result.append(
                 {
                     **program,
                     "running": running,
-                    "pid": process.pid if process is not None and running else None,
+                    "pid": pid,
                 }
             )
         return result
 
+    def list_running_processes(self) -> list[dict]:
+        programs = self._load()
+        registered_pids = {
+            program["attached_pid"]
+            for program in programs
+            if isinstance(program.get("attached_pid"), int)
+        }
+        registered_pids.update(
+            process.pid
+            for process in self.processes.values()
+            if process.poll() is None
+        )
+        processes = []
+        for process_path in Path("/proc").iterdir():
+            if not process_path.name.isdigit():
+                continue
+            pid = int(process_path.name)
+            if pid == os.getpid() or pid in registered_pids:
+                continue
+            process = _process_info(pid)
+            if process is not None:
+                processes.append(process)
+        return sorted(processes, key=lambda process: process["pid"])
+
     def add_program(self, name: str, command: str, cwd: str | None) -> dict:
+        return self._save_program(name, shlex.split(command), cwd)
+
+    def add_running_process(self, name: str, pid: int) -> dict:
+        if pid <= 0 or pid == os.getpid():
+            raise ValueError("Invalid process ID")
+        process = _process_info(pid)
+        if process is None:
+            raise ValueError("Process is no longer running or cannot be inspected")
+        program = self._save_program(name, process["command"], process["cwd"])
+        programs = self._load()
+        saved_program = next(item for item in programs if item["id"] == program["id"])
+        saved_program["attached_pid"] = process["pid"]
+        saved_program["attached_start_time"] = process["start_time"]
+        self._save(programs)
+        return {**saved_program, "running": True, "pid": process["pid"]}
+
+    def _save_program(self, name: str, command: str | list[str], cwd: str | None) -> dict:
         try:
-            args = shlex.split(command)
+            args = command.copy() if isinstance(command, list) else shlex.split(command)
         except ValueError as error:
             raise ValueError(f"Invalid command: {error}") from error
         if not args:
@@ -71,12 +138,20 @@ class ProgramManager:
         return {**program, "running": False, "pid": None}
 
     def start(self, program_id: str) -> dict:
-        program = next((item for item in self._load() if item["id"] == program_id), None)
+        programs = self._load()
+        program = next((item for item in programs if item["id"] == program_id), None)
         if program is None:
             raise KeyError("Program not found")
         process = self.processes.get(program_id)
         if process is not None and process.poll() is None:
             raise RuntimeError("Program is already running")
+        attached_pid = program.get("attached_pid")
+        attached = _process_info(attached_pid) if isinstance(attached_pid, int) else None
+        if attached is not None and attached["start_time"] == program.get("attached_start_time"):
+            raise RuntimeError("Program is already running")
+        program.pop("attached_pid", None)
+        program.pop("attached_start_time", None)
+        self._save(programs)
         try:
             process = subprocess.Popen(program["command"], cwd=program["cwd"] or None)
         except (OSError, ValueError) as error:
@@ -85,15 +160,46 @@ class ProgramManager:
         return {"id": program_id, "running": True, "pid": process.pid}
 
     def stop(self, program_id: str) -> dict:
-        if not any(item["id"] == program_id for item in self._load()):
+        programs = self._load()
+        program = next((item for item in programs if item["id"] == program_id), None)
+        if program is None:
             raise KeyError("Program not found")
         process = self.processes.get(program_id)
-        if process is None or process.poll() is not None:
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=2)
             return {"id": program_id, "running": False}
-        process.terminate()
+        attached_pid = program.get("attached_pid")
+        if not isinstance(attached_pid, int):
+            program.pop("attached_pid", None)
+            program.pop("attached_start_time", None)
+            self._save(programs)
+            return {"id": program_id, "running": False}
+        attached = _process_info(attached_pid)
+        if attached is None or attached["start_time"] != program.get("attached_start_time"):
+            program.pop("attached_pid", None)
+            program.pop("attached_start_time", None)
+            self._save(programs)
+            return {"id": program_id, "running": False}
         try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=2)
+            os.kill(attached_pid, signal.SIGTERM)
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                current = _process_info(attached_pid)
+                if current is None or current["start_time"] != program["attached_start_time"]:
+                    break
+                time.sleep(0.1)
+            else:
+                current = _process_info(attached_pid)
+                if current is not None and current["start_time"] == program["attached_start_time"]:
+                    os.kill(attached_pid, signal.SIGKILL)
+        except OSError as error:
+            raise RuntimeError(f"Could not stop process: {error}") from error
+        program.pop("attached_pid", None)
+        program.pop("attached_start_time", None)
+        self._save(programs)
         return {"id": program_id, "running": False}

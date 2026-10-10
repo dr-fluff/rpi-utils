@@ -29,13 +29,16 @@
     <section class="overview" aria-label="Device overview">
       <div class="overview-item"><span class="metric-label">PROGRAMS</span><strong id="program-count">0</strong><span class="metric-note">registered</span></div>
       <div class="overview-item"><span class="metric-label">ACTIVE</span><strong id="active-count">0</strong><span class="metric-note">running now</span></div>
-      <div class="overview-item ip-item"><span class="metric-label">GLOBAL IP</span><strong id="global-ip">Not checked</strong><button id="ip-button" class="text-action">Check address <span aria-hidden="true">↗</span></button></div>
+      <div class="overview-item ip-item"><span class="metric-label">GLOBAL IP</span><strong id="global-ip">Checking…</strong><button id="ip-button" class="text-action">Force refresh <span aria-hidden="true">↗</span></button></div>
     </section>
 
     <section class="program-section">
       <div class="section-heading">
         <div><p class="eyebrow">PROCESS MANAGEMENT</p><h2>Your programs</h2></div>
-        <button class="button button-accent" id="add-button"><span aria-hidden="true">＋</span> Add program</button>
+        <div class="masthead-actions">
+          <button class="button button-quiet" id="add-running-button">Add running program</button>
+          <button class="button button-accent" id="add-button"><span aria-hidden="true">＋</span> Add program</button>
+        </div>
       </div>
       <div id="program-list" class="program-list" aria-live="polite"></div>
       <p id="notice" class="notice" role="status"></p>
@@ -52,6 +55,16 @@
       <p class="field-hint">Enter the executable and arguments. Commands run directly without a shell.</p>
       <label>Working directory <span class="optional">OPTIONAL</span><input name="cwd" placeholder="/home/pi/project"></label>
       <div class="dialog-actions"><button type="button" class="button button-quiet" id="cancel-button">Cancel</button><button class="button button-dark" type="submit">Save program</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="running-dialog">
+    <form id="running-form">
+      <div class="dialog-heading"><div><p class="eyebrow">RUNNING PROCESS</p><h2>Add an existing process</h2></div><button type="button" class="close-button" id="close-running-dialog" aria-label="Close">×</button></div>
+      <label>Process<select name="pid" id="running-process-select" required><option value="">Choose a running process</option></select></label>
+      <label>Display name<input name="name" id="running-process-name" required maxlength="80" placeholder="WireGuard"></label>
+      <p class="field-hint">The process will be saved in your program list without starting a duplicate. Entries are saved outside the app checkout and remain through app updates.</p>
+      <div class="dialog-actions"><button type="button" class="button button-quiet" id="cancel-running-button">Cancel</button><button class="button button-dark" type="submit">Add running process</button></div>
     </form>
   </dialog>
 </body>

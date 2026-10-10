@@ -2,6 +2,10 @@ const list = document.querySelector('#program-list');
 const notice = document.querySelector('#notice');
 const dialog = document.querySelector('#program-dialog');
 const form = document.querySelector('#program-form');
+const runningDialog = document.querySelector('#running-dialog');
+const runningForm = document.querySelector('#running-form');
+const runningProcessSelect = document.querySelector('#running-process-select');
+const runningProcessName = document.querySelector('#running-process-name');
 
 async function request(url, options) {
   const response = await fetch(url, options);
@@ -72,21 +76,51 @@ document.querySelector('#refresh-button').addEventListener('click', refresh);
 document.querySelector('#add-button').addEventListener('click', () => dialog.showModal());
 document.querySelector('#close-dialog').addEventListener('click', () => dialog.close());
 document.querySelector('#cancel-button').addEventListener('click', () => dialog.close());
-document.querySelector('#ip-button').addEventListener('click', async () => {
+document.querySelector('#add-running-button').addEventListener('click', async () => {
+  try {
+    const { processes } = await request('/api/processes');
+    runningProcessSelect.replaceChildren(new Option('Choose a running process', ''));
+    processes.forEach(process => {
+      const option = new Option(`[${process.pid}] ${process.command.join(' ')}`, process.pid);
+      option.dataset.name = process.command[0].split('/').pop();
+      runningProcessSelect.add(option);
+    });
+    runningProcessName.value = '';
+    runningDialog.showModal();
+    if (!processes.length) showNotice('No unregistered running processes were found.');
+  } catch (error) {
+    showNotice(error.message);
+  }
+});
+document.querySelector('#close-running-dialog').addEventListener('click', () => runningDialog.close());
+document.querySelector('#cancel-running-button').addEventListener('click', () => runningDialog.close());
+runningProcessSelect.addEventListener('change', () => {
+  const selected = runningProcessSelect.selectedOptions[0];
+  runningProcessName.value = selected?.dataset.name || '';
+});
+async function refreshGlobalIp(retryCount = 0) {
   const button = document.querySelector('#ip-button');
+  const globalIp = document.querySelector('#global-ip');
   button.disabled = true;
   button.textContent = 'Checking…';
   try {
     const { ip } = await request('/api/ip');
-    document.querySelector('#global-ip').textContent = ip;
-    button.textContent = 'Refresh address ↗';
+    globalIp.textContent = ip;
+    button.textContent = 'Force refresh ↗';
   } catch (error) {
-    showNotice(error.message);
+    globalIp.textContent = 'Unavailable';
     button.textContent = 'Retry address ↗';
+    if (retryCount < 2) {
+      window.setTimeout(() => refreshGlobalIp(retryCount + 1), 1500);
+    } else {
+      showNotice(`Could not check global IP: ${error.message}`);
+    }
   } finally {
     button.disabled = false;
   }
-});
+}
+document.querySelector('#ip-button').addEventListener('click', refreshGlobalIp);
+refreshGlobalIp();
 document.querySelector('#update-button').addEventListener('click', async event => {
   const button = event.currentTarget;
   if (!window.confirm('Install the latest published GitHub release and available system package upgrades?')) return;
@@ -108,6 +142,21 @@ form.addEventListener('submit', async event => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: values.name, command: values.command, cwd: values.cwd || null }),
+    });
+    runningForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(runningForm));
+      try {
+        await request('/api/programs/running', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: values.name, pid: Number(values.pid) }),
+        });
+        runningDialog.close();
+        await refresh();
+      } catch (error) {
+        showNotice(error.message);
+      }
     });
     form.reset();
     dialog.close();

@@ -44,6 +44,11 @@ class ProgramInput(BaseModel):
     cwd: str | None = None
 
 
+class RunningProgramInput(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    pid: int = Field(gt=0)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     bot_task = asyncio.create_task(telegram_polling(manager))
@@ -92,10 +97,26 @@ async def status() -> dict:
     return {"programs": manager.list_programs()}
 
 
+@app.get("/api/processes")
+async def running_processes() -> dict:
+    try:
+        return {"processes": manager.list_running_processes()}
+    except OSError as error:
+        raise HTTPException(status_code=500, detail=f"Could not inspect running processes: {error}") from error
+
+
 @app.post("/api/programs", status_code=201)
 async def add_program(program: ProgramInput) -> dict:
     try:
         return manager.add_program(program.name, program.command, program.cwd)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post("/api/programs/running", status_code=201)
+async def add_running_program(program: RunningProgramInput) -> dict:
+    try:
+        return manager.add_running_process(program.name, program.pid)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 

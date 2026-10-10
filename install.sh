@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "Starting Pi Console installation..."
+STEP=0
+TOTAL_STEPS=7
+progress() {
+	STEP=$((STEP + 1))
+	printf '\n[%d/%d] %s\n' "${STEP}" "${TOTAL_STEPS}" "$1"
+}
+
+progress "Checking installer prerequisites"
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_USER="${SUDO_USER:-${USER}}"
 SERVICE_HOME="$(getent passwd "${SERVICE_USER}" | cut -d: -f6)"
@@ -18,11 +27,17 @@ if [[ ! -d "${PROJECT_DIR}/.git" ]]; then
 	exit 1
 fi
 
+progress "Creating Python virtual environment"
 "${PYTHON}" -m venv "${PROJECT_DIR}/.venv"
-"${PROJECT_DIR}/.venv/bin/pip" install --upgrade pip
-"${PROJECT_DIR}/.venv/bin/pip" install --editable "${PROJECT_DIR}"
+
+progress "Upgrading pip (this may take a few minutes)"
+"${PROJECT_DIR}/.venv/bin/pip" install --progress-bar on --upgrade pip
+
+progress "Installing Pi Console and Python dependencies"
+"${PROJECT_DIR}/.venv/bin/pip" install --progress-bar on --editable "${PROJECT_DIR}"
 chown -R "${SERVICE_USER}" "${PROJECT_DIR}/.venv"
 
+progress "Installing restricted system upgrade and reboot helpers"
 install -o root -g root -m 0755 "${PROJECT_DIR}/scripts/rpi-utils-system-upgrade" "${UPGRADE_HELPER}"
 install -o root -g root -m 0755 "${PROJECT_DIR}/scripts/rpi-utils-reboot" "${REBOOT_HELPER}"
 SUDOERS_TEMP="$(mktemp)"
@@ -32,6 +47,7 @@ printf '%s ALL=(root) NOPASSWD: %s, %s\n' \
 visudo -cf "${SUDOERS_TEMP}"
 install -o root -g root -m 0440 "${SUDOERS_TEMP}" "${SUDOERS_FILE}"
 
+progress "Configuring the systemd service"
 cat > /etc/systemd/system/rpi-utils.service <<UNIT
 [Unit]
 Description=Raspberry Pi Control Service
@@ -52,6 +68,7 @@ PrivateTmp=true
 WantedBy=multi-user.target
 UNIT
 
+progress "Enabling and starting Pi Console"
 systemctl daemon-reload
 systemctl enable rpi-utils.service
 systemctl restart rpi-utils.service

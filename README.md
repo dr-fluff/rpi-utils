@@ -27,7 +27,7 @@ Replace both placeholders with the Pi's SSH username and LAN address. The SSH pa
 
 ## Manage programs
 
-Choose **Add program** in the dashboard and enter an executable followed by its arguments, for example `/usr/bin/python3 /home/pi/scripts/backup.py`. The command is tokenized and executed directly, without a shell. Program definitions are stored in `~/.config/rpi-utils/programs.json` (override with `RPI_UTILS_PROGRAMS_FILE`).
+Choose **Add program** in the dashboard and enter an executable followed by its arguments, for example `/usr/bin/python3 /home/pi/scripts/backup.py`. Use **Add running program** to select a process that is already running and save it to the program list without starting a duplicate. Imported processes are tracked by PID and start identity, so the dashboard will not mistake a later process that reused that PID for the imported one. Program definitions are stored in `~/.config/rpi-utils/programs.json` (override with `RPI_UTILS_PROGRAMS_FILE`), outside the app checkout, so app releases do not overwrite them. Stopping a process requires the service account to have permission to signal it. This manages processes, not systemd services or kernel-managed interfaces; for example, WireGuard is commonly managed by `wg-quick`/systemd rather than as a long-running user process.
 
 ## Telegram
 

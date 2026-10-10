@@ -265,6 +265,28 @@ class AuthMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(secure_response.status_code, 204)
         self.assertEqual(http_response.status_code, 426)
 
+    async def test_caddy_can_allow_https_requests_by_pi_ip(self):
+        password = "long-enough-test-password"
+        token = session_token(password)
+        middleware = LocalOnlyMiddleware(app)
+        with patch.dict(
+            os.environ,
+            {
+                "RPI_UTILS_WEB_PASSWORD": password,
+                "RPI_UTILS_ALLOWED_HOSTS": "192.168.0.10",
+            },
+        ):
+            response = await middleware.dispatch(
+                make_request(
+                    scheme="https",
+                    host="192.168.0.10:8002",
+                    cookie=token,
+                ),
+                self.next_response,
+            )
+
+        self.assertEqual(response.status_code, 204)
+
     async def test_unlisted_host_is_rejected(self):
         middleware = LocalOnlyMiddleware(app)
         with patch.dict(

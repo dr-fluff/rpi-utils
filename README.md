@@ -14,32 +14,35 @@ make dev
 `make dev` automatically reloads the app when Python, HTML, JavaScript, or CSS files change. For a non-reloading local run, use `make run`.
 When running on your Mac at `http://127.0.0.1:8002`, login is optional and the terminal button is available only to the local machine. The sign-in page appears when `RPI_UTILS_WEB_PASSWORD` is set; `make dev` does not load the Pi's service environment automatically. To test login locally, start the app with `RPI_UTILS_WEB_PASSWORD` set to a password at least 12 characters long. Remote access remains disabled unless the HTTPS/Caddy settings below are configured.
 
-On the Pi, verify the service responds:
+For local development, verify the app responds:
 
 ```sh
 curl http://127.0.0.1:8002/
 ```
 
-The installer binds Pi Console to `127.0.0.1:8002` so it can only be reached through the local machine or a reverse proxy. Remote dashboard access is disabled until a password is configured. Set up Caddy with HTTPS and a strong dashboard password before exposing it to your LAN. The dashboard can start and stop programs, run system upgrades, and open a shell as the service account, so never expose it directly to the internet. If you prefer not to expose the dashboard to the LAN, use the SSH tunnel from a terminal on your laptop instead:
+The installer runs Pi Console on `127.0.0.1:8003` and expects Caddy to serve HTTPS on port `8002`. Opening `http://<pi-ip>:8002` directly will not work; use the Caddy HTTPS URL shown by the installer. The dashboard can start and stop programs, run system upgrades, and open a shell as the service account, so never expose it directly to the internet. For temporary access before configuring Caddy, create an SSH tunnel from your Mac:
 
 ```sh
-ssh -N -L 8002:127.0.0.1:8002 <pi-username>@<pi-ip-address>
+ssh -N -L 18002:127.0.0.1:8003 <pi-username>@<pi-ip-address>
 ```
 
-Replace both placeholders with the Pi's SSH username and LAN address. The SSH password prompt requires that Pi user's login password; `Permission denied` means the username/password or SSH key is not accepted. First confirm `ssh <pi-username>@<pi-ip-address>` works, then retry with the tunnel command. Leave the tunnel terminal open and visit [http://127.0.0.1:8002](http://127.0.0.1:8002) on the laptop. If the Pi-side `curl` fails, check the service with `sudo systemctl status rpi-utils --no-pager` and its logs with `sudo journalctl -u rpi-utils -n 50 --no-pager`.
+Replace both placeholders with the Pi's SSH username and LAN address. The SSH password prompt requires that Pi user's login password; `Permission denied` means the username/password or SSH key is not accepted. First confirm `ssh <pi-username>@<pi-ip-address>` works, then retry with the tunnel command. Leave the tunnel terminal open and visit [http://127.0.0.1:18002](http://127.0.0.1:18002) on your Mac. If the Pi-side `curl` fails, check the service with `sudo systemctl status rpi-utils --no-pager` and its logs with `sudo journalctl -u rpi-utils -n 50 --no-pager`.
 
 ### Secure Caddy access and web terminal
 
-The installer keeps Pi Console on loopback and trusts forwarded HTTPS information only from Caddy on `127.0.0.1`. On a fresh install, it creates a temporary dashboard password, requires a password change after first sign-in, and prints the temporary password and login URL at the end. Add a Caddy site for a hostname that resolves to the Pi on your LAN. For a LAN-only hostname, Caddy can issue an internal certificate. Add this site to `/etc/caddy/Caddyfile`:
+The installer keeps Pi Console on loopback port `8003` and trusts forwarded HTTPS information only from Caddy on `127.0.0.1`. Caddy exposes the secure dashboard on port `8002`, so you can sign in from your Mac without a screen attached to the Pi. On a fresh install, the installer creates a temporary dashboard password, requires a password change after first sign-in, and prints the temporary password and HTTPS login URL. Find the Pi's LAN IP with `hostname -I`, then use that address or a hostname that resolves to the Pi in `/etc/caddy/Caddyfile`:
 
 ```caddyfile
-pi-console.home.arpa {
+https://<pi-ip-address>:8002 {
     tls internal
-    reverse_proxy 127.0.0.1:8002
+    bind <pi-ip-address>
+    reverse_proxy 127.0.0.1:8003
 }
 ```
 
-Validate and reload Caddy, then add the hostname to `~/.config/rpi-utils/env`:
+Alternatively, use a local hostname such as `pi-console.home.arpa` instead of the IP. Make it resolve to the Pi from your Mac (for example, add it to your router's local DNS or the Mac's `/etc/hosts`), use that hostname in the Caddy site address, and set it in `RPI_UTILS_ALLOWED_HOSTS`.
+
+Validate and reload Caddy, then add the same IP or hostname to `~/.config/rpi-utils/env`:
 
 ```sh
 sudo caddy validate --config /etc/caddy/Caddyfile
@@ -49,15 +52,28 @@ nano ~/.config/rpi-utils/env
 chmod 600 ~/.config/rpi-utils/env
 ```
 
-Put these values in the env file (use the hostname from the Caddy site, without a scheme or port):
+If Caddy serves the Pi's IP address, set that same IP:
+
+```sh
+RPI_UTILS_ALLOWED_HOSTS=<pi-ip-address>
+```
+
+If you use a hostname instead, set that exact hostname (without a scheme or port):
 
 ```sh
 RPI_UTILS_ALLOWED_HOSTS=pi-console.home.arpa
 ```
 
-Keep that file private and do not remove the installer-generated `RPI_UTILS_WEB_PASSWORD` or `RPI_UTILS_PASSWORD_CHANGE_REQUIRED` entries. The installer prints a temporary password once; after first sign-in, Pi Console requires you to set a new password. Caddy must be configured to serve the same hostname; the app rejects unlisted hostnames and remote HTTP access. Trust Caddy's local root certificate on each client device before signing in, or use a publicly trusted certificate for a domain you control. The login protects the dashboard APIs as well as the terminal, uses an eight-hour HTTP-only session cookie, and rate-limits failed logins. Use **Change password** in the dashboard header to update it later. The terminal runs as the Pi Console service account, not root; it has that account's normal filesystem permissions and the limited sudo permissions configured by the installer.
+Keep that file private and do not remove the installer-generated `RPI_UTILS_WEB_PASSWORD` or `RPI_UTILS_PASSWORD_CHANGE_REQUIRED` entries. The installer prints a temporary password once; after first sign-in, Pi Console requires you to set a new password. Caddy must serve the same IP/hostname on port `8002`; the app rejects unlisted hosts and remote HTTP access. Caddy's `tls internal` uses its own local certificate authority. If the browser does not trust the local certificate, copy Caddy's public root certificate to your Mac over SSH and add it to the System keychain:
 
-After authentication is configured, re-run `sudo ./install.sh` once to apply the loopback-only service binding, restart the service, then open the dashboard over Caddy's HTTPS URL and use **Terminal**. The browser terminal uses a PTY with the service account's interactive shell. Loopback HTTP is allowed for local development or an SSH tunnel; remote access requires HTTPS. The terminal client is bundled locally (xterm.js 6.0.0), so it does not depend on a third-party CDN.
+```sh
+ssh <pi-username>@<pi-ip-address> 'sudo cat /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt' > ~/Downloads/pi-console-root.crt
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/Downloads/pi-console-root.crt
+```
+
+The root certificate is public; never copy Caddy's private key. The login protects the dashboard APIs as well as the terminal, uses an eight-hour HTTP-only session cookie, and rate-limits failed logins. Use **Change password** in the dashboard header to update it later. The terminal runs as the Pi Console service account, not root; it has that account's normal filesystem permissions and the limited sudo permissions configured by the installer.
+
+After configuring Caddy and `RPI_UTILS_ALLOWED_HOSTS`, re-run `sudo ./install.sh` to apply the service configuration. Open `https://<pi-ip-address>:8002/` (or your chosen hostname with `:8002`) on your Mac and use the temporary password printed by the installer. The browser terminal uses a PTY with the service account's interactive shell. Loopback HTTP is allowed for local development or an SSH tunnel; remote access requires HTTPS. The terminal client is bundled locally (xterm.js 6.0.0), so it does not depend on a third-party CDN.
 
 ## Manage programs
 
@@ -87,6 +103,6 @@ sudo ./install.sh
 
 The installer uses its Bash shebang; do not invoke it with `sh`.
 
-The script creates a systemd service listening on `127.0.0.1:8002`. Set Telegram variables in `~/.config/rpi-utils/env` before or after installation, then restart the service with `sudo systemctl restart rpi-utils`.
+The script creates a systemd service listening on `127.0.0.1:8003`, behind Caddy's HTTPS listener on port `8002`. Set Telegram and allowed-host settings in `~/.config/rpi-utils/env` before or after installation, then restart with `sudo systemctl restart rpi-utils`.
 
 The dashboard checks GitHub for a newer published release on page load and every five minutes, showing an **Update now** banner when the release tag points to a different commit than the installed checkout. The dashboard's **Update device** action requires a clean checkout, checks out that release tag (not unreleased branch commits), installs available system upgrades with `apt-get update` and `apt-get upgrade`, refreshes the installed package dependencies, and restarts the service after a successful update. It reports an error if no GitHub release has been published yet. Local changes stop the update rather than being overwritten. The installer provisions a root-owned apt helper and grants the service account passwordless sudo for that helper only; re-run `sudo ./install.sh` on existing installations to enable system upgrades and loopback-only service access. Review the repository and configure its Git remote before installing; the updater fetches the selected release tag from that checkout's `origin`.

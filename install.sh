@@ -77,7 +77,7 @@ Wants=network-online.target
 Type=simple
 User=${SERVICE_USER}
 WorkingDirectory=${PROJECT_DIR}
-ExecStart=${PROJECT_DIR}/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8002 --proxy-headers --forwarded-allow-ips=127.0.0.1 --ws-max-size=65536
+ExecStart=${PROJECT_DIR}/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8003 --proxy-headers --forwarded-allow-ips=127.0.0.1 --ws-max-size=65536
 Restart=on-failure
 RestartSec=3
 EnvironmentFile=-${SERVICE_HOME}/.config/rpi-utils/env
@@ -91,7 +91,7 @@ progress "Enabling and starting Pi Console"
 systemctl daemon-reload
 systemctl enable rpi-utils.service
 systemctl restart rpi-utils.service
-echo "Pi Console is listening on 127.0.0.1:8002. Configure Caddy for HTTPS before remote access."
+echo "Pi Console backend is listening on 127.0.0.1:8003. Configure Caddy for HTTPS on port 8002."
 echo "Optional Telegram settings: ${SERVICE_HOME}/.config/rpi-utils/env"
 LOGIN_HOST="$("${PYTHON}" - "${AUTH_ENV_FILE}" <<'PY'
 import re
@@ -110,10 +110,10 @@ for line in Path(sys.argv[1]).read_text().splitlines():
 PY
 )"
 if [[ -n "${LOGIN_HOST}" ]]; then
-	echo "Login URL: https://${LOGIN_HOST}/"
+	echo "Login URL: https://${LOGIN_HOST}:8002/"
 else
-	echo "Login URL (local only): http://127.0.0.1:8002/"
-	echo "For LAN access, configure Caddy and RPI_UTILS_ALLOWED_HOSTS, then open https://<your-caddy-hostname>/."
+	echo "Local development URL: http://127.0.0.1:8002/"
+	echo "For LAN access, set RPI_UTILS_ALLOWED_HOSTS and configure Caddy to proxy HTTPS port 8002 to 127.0.0.1:8003."
 fi
 if [[ -n "${TEMP_PASSWORD}" ]]; then
 	echo

@@ -43,7 +43,17 @@ let terminalInstance;
 let terminalSocket;
 
 async function request(url, options) {
-  const response = await fetch(url, options);
+  let response;
+  try {
+    response = await fetch(url, options);
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error(
+        'Could not reach Pi Console. Use its Caddy HTTPS address or an SSH tunnel; the app backend is local-only.',
+      );
+    }
+    throw error;
+  }
   const data = await response.json();
   if (response.status === 401 && authActive && !url.startsWith('/api/auth/')) {
     showLogin('Your session expired. Sign in again.');

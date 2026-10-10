@@ -129,11 +129,14 @@ class ProgramManager:
 
     def list_running_processes(self) -> list[dict]:
         programs = self._load()
-        registered_pids = {
-            program["attached_pid"]
-            for program in programs
-            if isinstance(program.get("attached_pid"), int)
-        }
+        registered_pids = set()
+        for program in programs:
+            attached_pid = program.get("attached_pid")
+            if not isinstance(attached_pid, int):
+                continue
+            attached = _process_info(attached_pid)
+            if attached is not None and attached["start_time"] == program.get("attached_start_time"):
+                registered_pids.add(attached_pid)
         registered_pids.update(
             process.pid
             for process in self.processes.values()
@@ -246,6 +249,20 @@ class ProgramManager:
         attached = _process_info(attached_pid) if isinstance(attached_pid, int) else None
         if attached is not None and attached["start_time"] == program.get("attached_start_time"):
             raise RuntimeError("Program is already running")
+        existing_process = next(
+            (
+                candidate
+                for candidate in self.list_running_processes()
+                if candidate["command"] == program["command"]
+                and (program["cwd"] is None or candidate["cwd"] == program["cwd"])
+            ),
+            None,
+        )
+        if existing_process is not None:
+            program["attached_pid"] = existing_process["pid"]
+            program["attached_start_time"] = existing_process["start_time"]
+            self._save(programs)
+            return {"id": program_id, "running": True, "pid": existing_process["pid"]}
         program.pop("attached_pid", None)
         program.pop("attached_start_time", None)
         self._save(programs)

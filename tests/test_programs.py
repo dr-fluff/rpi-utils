@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from app.programs import ProgramManager, _mac_process_info, _process_info
 from app.telegram.bot import allowed_chat_ids
@@ -85,7 +85,7 @@ class ProgramManagerTests(unittest.TestCase):
         self.assertEqual(saved["attached_pid"], 4321)
         self.assertEqual(saved["attached_start_time"], 987654)
         self.assertEqual(saved["url"], "http://192.168.0.10:3000")
-        process_info.assert_called_once_with(4321)
+        self.assertEqual(process_info.call_args_list, [call(4321), call(4321)])
 
         restored_manager = ProgramManager()
         with patch("app.programs._process_info", return_value=process):
@@ -175,6 +175,58 @@ class ProgramManagerTests(unittest.TestCase):
                 self.manager.add_running_process("Gone", 4321)
 
         self.assertEqual(self.manager.list_programs(), [])
+
+    def test_start_reattaches_to_matching_process_restarted_by_service_manager(self):
+        program = self.manager.add_program(
+            "Example service",
+            "/usr/bin/example-service --foreground",
+            self.temporary_directory.name,
+        )
+        restarted_process = {
+            "pid": 8765,
+            "command": program["command"],
+            "cwd": program["cwd"],
+            "start_time": 987655,
+        }
+        with (
+            patch.object(self.manager, "list_running_processes", return_value=[restarted_process]),
+            patch("app.programs.subprocess.Popen") as popen,
+        ):
+            result = self.manager.start(program["id"])
+
+        self.assertEqual(result, {"id": program["id"], "running": True, "pid": 8765})
+        popen.assert_not_called()
+        saved_program = self.manager._load()[0]
+        self.assertEqual(saved_program["attached_pid"], 8765)
+        self.assertEqual(saved_program["attached_start_time"], 987655)
+
+    def test_start_can_find_process_reusing_the_old_attached_pid(self):
+        process = {
+            "pid": 4321,
+            "command": ["/usr/bin/example-service", "--foreground"],
+            "cwd": self.temporary_directory.name,
+            "start_time": 987654,
+        }
+        with patch("app.programs._process_info", return_value=process):
+            program = self.manager.add_running_process("Example service", 4321)
+
+        replacement = {
+            **process,
+            "cwd": str(Path(self.temporary_directory.name).resolve()),
+            "start_time": 987655,
+        }
+        with (
+            patch("app.programs._is_macos", return_value=False),
+            patch("app.programs.Path.iterdir", return_value=[Path("/proc/4321")]),
+            patch("app.programs._process_info", return_value=replacement),
+            patch("app.programs.subprocess.Popen") as popen,
+        ):
+            result = self.manager.start(program["id"])
+
+        self.assertEqual(result, {"id": program["id"], "running": True, "pid": 4321})
+        popen.assert_not_called()
+        saved_program = self.manager._load()[0]
+        self.assertEqual(saved_program["attached_start_time"], 987655)
 
     def test_stop_does_not_signal_a_reused_process_id(self):
         process = {

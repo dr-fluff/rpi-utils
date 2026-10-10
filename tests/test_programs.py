@@ -3,9 +3,10 @@ import os
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from app.programs import ProgramManager
+from app.programs import ProgramManager, _mac_process_info
 from app.telegram.bot import allowed_chat_ids
 
 
@@ -52,6 +53,7 @@ class ProgramManagerTests(unittest.TestCase):
         }
         with (
             patch("app.programs._process_info", return_value=process) as process_info,
+            patch("app.programs._is_macos", return_value=False),
             patch("app.programs.Path.iterdir", return_value=[]),
         ):
             program = self.manager.add_running_process("Example service", 4321)
@@ -71,6 +73,50 @@ class ProgramManagerTests(unittest.TestCase):
             restored_program = restored_manager.list_programs()[0]
         self.assertTrue(restored_program["running"])
         self.assertEqual(restored_program["pid"], 4321)
+
+    def test_list_running_processes_uses_ps_on_macos(self):
+        ps_output = (
+            " 4321 Sat Oct 10 14:33:45 2026 /usr/bin/wg-quick up wg0\n"
+            f" {os.getpid()} Sat Oct 10 14:33:45 2026 test runner\n"
+        )
+        with (
+            patch("app.programs._is_macos", return_value=True),
+            patch(
+                "app.programs.subprocess.run",
+                return_value=SimpleNamespace(returncode=0, stdout=ps_output, stderr=""),
+            ) as run,
+        ):
+            processes = self.manager.list_running_processes()
+
+        self.assertEqual(len(processes), 1)
+        self.assertEqual(processes[0]["pid"], 4321)
+        self.assertEqual(processes[0]["command"], ["/usr/bin/wg-quick", "up", "wg0"])
+        self.assertIsNone(processes[0]["cwd"])
+        self.assertEqual(run.call_args.args[0], ["ps", "-axo", "pid=", "-o", "lstart=", "-o", "command="])
+
+    def test_mac_process_info_parses_start_time_and_command(self):
+        with (
+            patch("app.programs._is_macos", return_value=True),
+            patch(
+                "app.programs.subprocess.run",
+                return_value=SimpleNamespace(
+                    returncode=0,
+                    stdout="Sat Oct 10 14:33:45 2026 /usr/bin/wg-quick up wg0\n",
+                    stderr="",
+                ),
+            ),
+        ):
+            process = _mac_process_info(4321)
+
+        self.assertEqual(
+            process,
+            {
+                "pid": 4321,
+                "command": ["/usr/bin/wg-quick", "up", "wg0"],
+                "cwd": None,
+                "start_time": "Sat Oct 10 14:33:45 2026",
+            },
+        )
 
     def test_import_running_process_rejects_a_process_that_exited(self):
         with patch("app.programs._process_info", return_value=None):

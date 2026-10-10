@@ -61,7 +61,10 @@
   <dialog id="running-dialog">
     <form id="running-form">
       <div class="dialog-heading"><div><p class="eyebrow">RUNNING PROCESS</p><h2>Add an existing process</h2></div><button type="button" class="close-button" id="close-running-dialog" aria-label="Close">×</button></div>
-      <label>Process<select name="pid" id="running-process-select" required><option value="">Choose a running process</option></select></label>
+      <label>Search processes<input id="running-process-search" type="search" placeholder="Search command, path, or PID"></label>
+      <input name="pid" id="running-process-pid" type="hidden" required>
+      <div id="running-process-list" class="process-picker" role="listbox" aria-label="Running processes"></div>
+      <p id="running-process-empty" class="field-hint">Loading running processes…</p>
       <label>Display name<input name="name" id="running-process-name" required maxlength="80" placeholder="WireGuard"></label>
       <p class="field-hint">The process will be saved in your program list without starting a duplicate. Entries are saved outside the app checkout and remain through app updates.</p>
       <div class="dialog-actions"><button type="button" class="button button-quiet" id="cancel-running-button">Cancel</button><button class="button button-dark" type="submit">Add running process</button></div>

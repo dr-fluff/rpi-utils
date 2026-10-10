@@ -8,8 +8,10 @@ Install [uv](https://docs.astral.sh/uv/), then run:
 
 ```sh
 uv sync
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8002
+make dev
 ```
+
+`make dev` automatically reloads the app when Python, HTML, JavaScript, or CSS files change. For a non-reloading local run, use `make run`.
 
 On the Pi, verify the service responds:
 

@@ -4,6 +4,7 @@ import re
 import shlex
 import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -13,7 +14,38 @@ def config_path() -> Path:
     return Path(os.environ.get("RPI_UTILS_PROGRAMS_FILE", configured))
 
 
+def _is_macos() -> bool:
+    return sys.platform == "darwin"
+
+
+def _mac_process_info(pid: int) -> dict | None:
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "lstart=", "-o", "command="],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode:
+        return None
+    fields = result.stdout.strip().split(maxsplit=5)
+    if len(fields) != 6:
+        return None
+    try:
+        command = shlex.split(fields[5])
+    except ValueError:
+        return None
+    if not command:
+        return None
+    return {"pid": pid, "command": command, "cwd": None, "start_time": " ".join(fields[:5])}
+
+
 def _process_info(pid: int, proc_root: Path = Path("/proc")) -> dict | None:
+    if _is_macos():
+        return _mac_process_info(pid)
     process_path = proc_root / str(pid)
     try:
         command = [part.decode(errors="replace") for part in (process_path / "cmdline").read_bytes().split(b"\0") if part]
@@ -88,15 +120,47 @@ class ProgramManager:
             if process.poll() is None
         )
         processes = []
-        for process_path in Path("/proc").iterdir():
-            if not process_path.name.isdigit():
-                continue
-            pid = int(process_path.name)
+        if _is_macos():
+            try:
+                result = subprocess.run(
+                    ["ps", "-axo", "pid=", "-o", "lstart=", "-o", "command="],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired) as error:
+                raise RuntimeError(f"Could not list running processes: {error}") from error
+            if result.returncode:
+                raise RuntimeError(result.stderr.strip() or "Could not list running processes")
+            process_rows = []
+            for line in result.stdout.splitlines():
+                fields = line.strip().split(maxsplit=6)
+                if len(fields) != 7 or not fields[0].isdigit():
+                    continue
+                try:
+                    command = shlex.split(fields[6])
+                except ValueError:
+                    continue
+                if command:
+                    process_rows.append({
+                        "pid": int(fields[0]),
+                        "command": command,
+                        "cwd": None,
+                        "start_time": " ".join(fields[1:6]),
+                    })
+        else:
+            process_rows = []
+            for process_path in Path("/proc").iterdir():
+                if process_path.name.isdigit():
+                    process = _process_info(int(process_path.name))
+                    if process is not None:
+                        process_rows.append(process)
+        for process in process_rows:
+            pid = process["pid"]
             if pid == os.getpid() or pid in registered_pids:
                 continue
-            process = _process_info(pid)
-            if process is not None:
-                processes.append(process)
+            processes.append(process)
         return sorted(processes, key=lambda process: process["pid"])
 
     def add_program(self, name: str, command: str, cwd: str | None) -> dict:

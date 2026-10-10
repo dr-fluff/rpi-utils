@@ -10,7 +10,7 @@ from urllib.error import HTTPError
 
 from fastapi import HTTPException
 
-from app.main import get_latest_release_tag, update
+from app.main import check_for_update, get_latest_release_tag, update, update_check
 
 
 class UpdateTests(unittest.TestCase):
@@ -157,6 +157,60 @@ class UpdateTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.status_code, 404)
         self.assertEqual(raised.exception.detail, "No published GitHub release is available")
+
+    def test_update_check_reports_when_installed_release_is_current(self):
+        results = [
+            SimpleNamespace(returncode=0, stdout="", stderr=""),
+            SimpleNamespace(returncode=0, stdout="a" * 40 + "\n", stderr=""),
+            SimpleNamespace(
+                returncode=0,
+                stdout=f"{'a' * 40}\trefs/tags/v1.0.0\n",
+                stderr="",
+            ),
+        ]
+        with (
+            patch("app.main.ROOT", self.root),
+            patch("app.main.get_latest_release_tag", return_value="v1.0.0"),
+            patch("app.main.subprocess.run", side_effect=results),
+        ):
+            status = check_for_update()
+
+        self.assertEqual(
+            status,
+            {"update_available": False, "latest_version": "v1.0.0", "current_version": "a" * 12},
+        )
+
+    def test_update_check_detects_new_annotated_release_commit(self):
+        results = [
+            SimpleNamespace(returncode=0, stdout="", stderr=""),
+            SimpleNamespace(returncode=0, stdout="a" * 40 + "\n", stderr=""),
+            SimpleNamespace(
+                returncode=0,
+                stdout=(
+                    f"{'b' * 40}\trefs/tags/v1.1.0\n"
+                    f"{'c' * 40}\trefs/tags/v1.1.0^{{}}\n"
+                ),
+                stderr="",
+            ),
+        ]
+        with (
+            patch("app.main.ROOT", self.root),
+            patch("app.main.get_latest_release_tag", return_value="v1.1.0"),
+            patch("app.main.subprocess.run", side_effect=results),
+        ):
+            status = check_for_update()
+
+        self.assertEqual(status["update_available"], True)
+        self.assertEqual(status["latest_version"], "v1.1.0")
+
+    def test_update_check_hides_banner_when_no_release_exists(self):
+        with patch(
+            "app.main.check_for_update",
+            side_effect=HTTPException(status_code=404, detail="No published GitHub release is available"),
+        ):
+            status = asyncio.run(update_check())
+
+        self.assertEqual(status, {"update_available": False, "latest_version": None})
 
 
 if __name__ == "__main__":

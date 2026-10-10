@@ -58,7 +58,7 @@ Wants=network-online.target
 Type=simple
 User=${SERVICE_USER}
 WorkingDirectory=${PROJECT_DIR}
-ExecStart=${PROJECT_DIR}/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8002
+ExecStart=${PROJECT_DIR}/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8002 --proxy-headers --forwarded-allow-ips=127.0.0.1 --ws-max-size=65536
 Restart=on-failure
 RestartSec=3
 EnvironmentFile=-${SERVICE_HOME}/.config/rpi-utils/env
@@ -72,5 +72,5 @@ progress "Enabling and starting Pi Console"
 systemctl daemon-reload
 systemctl enable rpi-utils.service
 systemctl restart rpi-utils.service
-echo "Pi Console is running on port 8002. Open http://<pi-ip-address>:8002 from a device on the same private network."
+echo "Pi Console is listening on 127.0.0.1:8002. Configure Caddy for HTTPS before remote access."
 echo "Optional Telegram settings: ${SERVICE_HOME}/.config/rpi-utils/env"

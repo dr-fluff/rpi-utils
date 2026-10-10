@@ -45,6 +45,21 @@ class ProgramManagerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "already exists"):
             self.manager.add_program("Worker", "python -V", None)
 
+    def test_remove_program_deletes_saved_entry_without_stopping_running_process(self):
+        self.manager.add_program("Worker", "python -V", None)
+        process = SimpleNamespace(poll=lambda: None, terminate=unittest.mock.Mock())
+        self.manager.processes["worker"] = process
+
+        self.manager.remove_program("worker")
+
+        self.assertEqual(self.manager.list_programs(), [])
+        process.terminate.assert_not_called()
+        self.assertNotIn("worker", self.manager.processes)
+
+    def test_remove_program_rejects_unknown_id(self):
+        with self.assertRaisesRegex(KeyError, "Program not found"):
+            self.manager.remove_program("unknown")
+
     def test_program_saves_optional_http_service_url(self):
         program = self.manager.add_program(
             "AdGuard",

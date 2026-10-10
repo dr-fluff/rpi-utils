@@ -5,14 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f3f4ee">
   <title>Pi Console</title>
+  <link rel="stylesheet" href="/static/vendor/xterm.css">
   <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/vendor/xterm.js" defer></script>
+  <script src="/static/vendor/addon-fit.js" defer></script>
   <script src="/static/app.js" defer></script>
 </head>
 <body>
+  <section id="login-screen" class="login-screen" hidden>
+    <form id="login-form" class="login-card">
+      <span class="brand-mark">π</span>
+      <p class="eyebrow">PRIVATE DEVICE ACCESS</p>
+      <h1>Sign in.</h1>
+      <label for="login-password">Dashboard password</label>
+      <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+      <p id="login-error" class="login-error" role="alert" hidden></p>
+      <button class="button button-dark" type="submit">Sign in</button>
+    </form>
+  </section>
+  <div id="dashboard-app" hidden>
   <header class="topbar">
     <a class="brand" href="/" aria-label="Pi Console home"><span class="brand-mark">π</span><span>PI<span class="brand-light">CONSOLE</span></span></a>
-    <div class="local-status"><span class="status-dot"></span> LOCAL DEVICE <span class="divider">/</span> <span id="clock">--:--:--</span></div>
+    <div class="topbar-actions"><div class="local-status"><span class="status-dot"></span> LOCAL DEVICE <span class="divider">/</span> <span id="clock">--:--:--</span></div><button id="logout-button" class="text-action">Sign out</button></div>
   </header>
+
+  <section id="update-banner" class="update-banner" role="status" aria-live="polite" hidden>
+    <p id="update-banner-message"></p>
+    <button id="update-banner-action" class="button button-dark" type="button">Update now</button>
+  </section>
 
   <main>
     <section class="masthead">
@@ -21,8 +41,8 @@
         <h1>Device<br><span>overview.</span></h1>
       </div>
       <div class="masthead-actions">
+        <button class="button button-quiet" id="terminal-button" type="button" hidden>Terminal</button>
         <button class="button button-quiet" id="refresh-button" title="Refresh status"><span aria-hidden="true">↻</span> Refresh</button>
-        <button class="button button-dark" id="update-button"><span aria-hidden="true">⇧</span> Update device</button>
       </div>
     </section>
 
@@ -30,6 +50,11 @@
       <div class="overview-item"><span class="metric-label">PROGRAMS</span><strong id="program-count">0</strong><span class="metric-note">registered</span></div>
       <div class="overview-item"><span class="metric-label">ACTIVE</span><strong id="active-count">0</strong><span class="metric-note">running now</span></div>
       <div class="overview-item ip-item"><span class="metric-label">GLOBAL IP</span><strong id="global-ip">Checking…</strong><button id="ip-button" class="text-action">Force refresh <span aria-hidden="true">↗</span></button></div>
+    </section>
+
+    <section class="command-section" aria-label="Device commands">
+      <div class="section-heading"><div><p class="eyebrow">SHARED WITH TELEGRAM</p><h2>Device commands</h2></div></div>
+      <div id="command-list" class="command-list" aria-live="polite"></div>
     </section>
 
     <section class="program-section">
@@ -72,5 +97,10 @@
       <div class="dialog-actions"><button type="button" class="button button-quiet" id="cancel-running-button">Cancel</button><button class="button button-dark" type="submit">Add running process</button></div>
     </form>
   </dialog>
+  <dialog id="terminal-dialog" class="terminal-dialog">
+    <div class="terminal-heading"><strong>Pi Console terminal</strong><span id="terminal-status">Connecting…</span><button id="close-terminal" class="button button-quiet" type="button">Close</button></div>
+    <div id="terminal"></div>
+  </dialog>
+  </div>
 </body>
 </html>

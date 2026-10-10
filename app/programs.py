@@ -203,6 +203,14 @@ class ProgramManager:
         self._save(programs)
         return {**saved_program, "running": True, "pid": process["pid"]}
 
+    def remove_program(self, program_id: str) -> None:
+        programs = self._load()
+        remaining = [program for program in programs if program["id"] != program_id]
+        if len(remaining) == len(programs):
+            raise KeyError("Program not found")
+        self._save(remaining)
+        self.processes.pop(program_id, None)
+
     def _save_program(
         self,
         name: str,

@@ -89,7 +89,7 @@ document.querySelector('#ip-button').addEventListener('click', async () => {
 });
 document.querySelector('#update-button').addEventListener('click', async event => {
   const button = event.currentTarget;
-  if (!window.confirm('Pull the latest version from GitHub?')) return;
+  if (!window.confirm('Install the latest published GitHub release and available system package upgrades?')) return;
   button.disabled = true;
   try {
     const result = await request('/api/update', { method: 'POST' });

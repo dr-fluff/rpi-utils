@@ -6,6 +6,7 @@ SERVICE_USER="${SUDO_USER:-${USER}}"
 SERVICE_HOME="$(getent passwd "${SERVICE_USER}" | cut -d: -f6)"
 PYTHON="$(command -v python3)"
 UPGRADE_HELPER="/usr/local/sbin/rpi-utils-system-upgrade"
+REBOOT_HELPER="/usr/local/sbin/rpi-utils-reboot"
 SUDOERS_FILE="/etc/sudoers.d/rpi-utils-updater"
 
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -23,9 +24,11 @@ fi
 chown -R "${SERVICE_USER}" "${PROJECT_DIR}/.venv"
 
 install -o root -g root -m 0755 "${PROJECT_DIR}/scripts/rpi-utils-system-upgrade" "${UPGRADE_HELPER}"
+install -o root -g root -m 0755 "${PROJECT_DIR}/scripts/rpi-utils-reboot" "${REBOOT_HELPER}"
 SUDOERS_TEMP="$(mktemp)"
 trap 'rm -f "${SUDOERS_TEMP}"' EXIT
-printf '%s ALL=(root) NOPASSWD: %s\n' "${SERVICE_USER}" "${UPGRADE_HELPER}" > "${SUDOERS_TEMP}"
+printf '%s ALL=(root) NOPASSWD: %s, %s\n' \
+	"${SERVICE_USER}" "${UPGRADE_HELPER}" "${REBOOT_HELPER}" > "${SUDOERS_TEMP}"
 visudo -cf "${SUDOERS_TEMP}"
 install -o root -g root -m 0440 "${SUDOERS_TEMP}" "${SUDOERS_FILE}"
 

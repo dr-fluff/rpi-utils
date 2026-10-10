@@ -38,7 +38,7 @@ TELEGRAM_BOT_TOKEN=your-bot-token
 TELEGRAM_ALLOWED_CHAT_IDS=123456789,987654321
 ```
 
-The bot accepts `/ip`, `/status`, `/start program-id`, and `/stop program-id`. It does not start unless both settings are present. Keep the env file private (`chmod 600 ~/.config/rpi-utils/env`).
+The bot accepts `/ip` (global and local addresses), `/status` (running programs), `/start program-id`, `/stop program-id`, `/restart` (reboot the Pi), and `/update` (install the latest published release and system upgrades). `/help` lists the commands. The bot does not start unless both settings are present. The installer provisions a root-owned reboot helper and grants the service account passwordless sudo for that helper and the system-upgrade helper only; re-run `sudo ./install.sh` on an existing installation to enable `/restart`. Keep the env file private (`chmod 600 ~/.config/rpi-utils/env`).
 
 ## Install as a service
 

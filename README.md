@@ -11,11 +11,19 @@ uv sync
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8002
 ```
 
-Open [http://127.0.0.1:8002](http://127.0.0.1:8002). The server binds only to loopback, so it is not available to other devices on the network. To open the dashboard from another computer, use an SSH tunnel rather than changing the bind address:
+On the Pi, verify the service responds:
 
 ```sh
-ssh -L 8002:127.0.0.1:8002 pi@raspberrypi
+curl http://127.0.0.1:8002/api/status
 ```
+
+The service listens only on the Pi's loopback address, so opening the Pi's LAN IP directly from your laptop will not work. Run the SSH tunnel from a terminal on the laptop, not in the Pi's shell. If the Pi's hostname does not resolve, run `hostname -I` on the Pi and use its Wi-Fi/Ethernet LAN address instead:
+
+```sh
+ssh -N -L 8002:127.0.0.1:8002 <pi-username>@<pi-ip-address>
+```
+
+Replace both placeholders with the Pi's SSH username and LAN address. The SSH password prompt requires that Pi user's login password; `Permission denied` means the username/password or SSH key is not accepted. First confirm `ssh <pi-username>@<pi-ip-address>` works, then retry with the tunnel command. Leave the tunnel terminal open and visit [http://127.0.0.1:8002](http://127.0.0.1:8002) on the laptop. If the Pi-side `curl` fails, check the service with `sudo systemctl status rpi-utils --no-pager` and its logs with `sudo journalctl -u rpi-utils -n 50 --no-pager`.
 
 ## Manage programs
 

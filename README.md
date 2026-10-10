@@ -8,7 +8,7 @@ Install [uv](https://docs.astral.sh/uv/), then run:
 
 ```sh
 uv sync
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8002
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8002
 ```
 
 On the Pi, verify the service responds:
@@ -17,7 +17,7 @@ On the Pi, verify the service responds:
 curl http://127.0.0.1:8002/api/status
 ```
 
-The service listens only on the Pi's loopback address, so opening the Pi's LAN IP directly from your laptop will not work. Run the SSH tunnel from a terminal on the laptop, not in the Pi's shell. If the Pi's hostname does not resolve, run `hostname -I` on the Pi and use its Wi-Fi/Ethernet LAN address instead:
+The service listens on all interfaces but allows browser requests only when addressed to a private-network IP or localhost. From a device on the same network, open `http://<pi-ip-address>:8002`; find the Pi's address with `hostname -I`. This dashboard can start and stop programs and run system upgrades, so keep it on a trusted private network and do not forward port 8002 to the internet. If you prefer not to expose the dashboard to the LAN, use the SSH tunnel from a terminal on your laptop instead:
 
 ```sh
 ssh -N -L 8002:127.0.0.1:8002 <pi-username>@<pi-ip-address>
@@ -55,4 +55,4 @@ The installer uses its Bash shebang; do not invoke it with `sh`.
 
 The script creates a systemd service listening on `127.0.0.1:8002`. Set Telegram variables in `~/.config/rpi-utils/env` before or after installation, then restart the service with `sudo systemctl restart rpi-utils`.
 
-The dashboard's **Update device** action requires a clean checkout, finds the latest published GitHub release, checks out that release tag (not unreleased branch commits), installs available system upgrades with `apt-get update` and `apt-get upgrade`, refreshes the installed package dependencies, and restarts the service after a successful update. It reports an error if no GitHub release has been published yet. Local changes stop the update rather than being overwritten. The installer provisions a root-owned apt helper and grants the service account passwordless sudo for that helper only; re-run `sudo ./install.sh` on existing installations to enable system upgrades. Review the repository and configure its Git remote before installing; the updater fetches the selected release tag from that checkout's `origin`.
+The dashboard's **Update device** action requires a clean checkout, finds the latest published GitHub release, checks out that release tag (not unreleased branch commits), installs available system upgrades with `apt-get update` and `apt-get upgrade`, refreshes the installed package dependencies, and restarts the service after a successful update. It reports an error if no GitHub release has been published yet. Local changes stop the update rather than being overwritten. The installer provisions a root-owned apt helper and grants the service account passwordless sudo for that helper only; re-run `sudo ./install.sh` on existing installations to enable system upgrades and LAN access. Review the repository and configure its Git remote before installing; the updater fetches the selected release tag from that checkout's `origin`.

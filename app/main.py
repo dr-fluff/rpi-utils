@@ -1,5 +1,6 @@
 
 import asyncio
+import ipaddress
 import json
 import os
 import subprocess
@@ -25,6 +26,18 @@ GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/dr-fluff/rpi-utils/rel
 manager = ProgramManager()
 
 
+def is_local_network_host(hostname: str | None) -> bool:
+    if hostname in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    if hostname is None:
+        return False
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        return False
+    return address.is_private or address.is_loopback
+
+
 class ProgramInput(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     command: str = Field(min_length=1, max_length=1000)
@@ -47,21 +60,21 @@ app = FastAPI(title="Raspberry Pi Control", lifespan=lifespan)
 
 class LocalOnlyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if request.url.hostname not in {"127.0.0.1", "localhost"}:
-            return PlainTextResponse("Local access only", status_code=403)
+        if not is_local_network_host(request.url.hostname):
+            return PlainTextResponse("Private network access only", status_code=403)
         origin = request.headers.get("origin")
         if origin:
             try:
                 parsed_origin = urlsplit(origin)
                 valid_origin = (
                     parsed_origin.scheme == "http"
-                    and parsed_origin.hostname in {"127.0.0.1", "localhost"}
+                    and is_local_network_host(parsed_origin.hostname)
                     and parsed_origin.port == 8002
                 )
             except ValueError:
                 valid_origin = False
             if not valid_origin:
-                return PlainTextResponse("Local access only", status_code=403)
+                return PlainTextResponse("Private network access only", status_code=403)
         return await call_next(request)
 
 
@@ -258,4 +271,4 @@ async def restart_service() -> None:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8002)
+    uvicorn.run(app, host="0.0.0.0", port=8002)

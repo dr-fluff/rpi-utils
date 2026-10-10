@@ -27,37 +27,49 @@ async def telegram_polling(manager: ProgramManager) -> None:
     async def ip_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
         if not await authorized(update):
             return
+        message = update.effective_message
+        if message is None:
+            return
         import urllib.request
 
         try:
             ip = await asyncio.to_thread(
                 lambda: urllib.request.urlopen("https://api.ipify.org", timeout=5).read(64).decode("ascii")
             )
-            await update.effective_message.reply_text(f"Global IP: {ip.strip()}")
+            await message.reply_text(f"Global IP: {ip.strip()}")
         except Exception:
-            await update.effective_message.reply_text("Could not determine global IP.")
+            await message.reply_text("Could not determine global IP.")
 
     async def status_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
         if not await authorized(update):
             return
+        message = update.effective_message
+        if message is None:
+            return
         programs = manager.list_programs()
         lines = [f"{'RUNNING' if item['running'] else 'STOPPED'}  {item['name']}" for item in programs]
-        await update.effective_message.reply_text("\n".join(lines) if lines else "No programs configured.")
+        await message.reply_text("\n".join(lines) if lines else "No programs configured.")
 
     async def control_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not await authorized(update):
             return
-        if len(context.args) != 1:
-            await update.effective_message.reply_text("Usage: /start <program-id> or /stop <program-id>")
+        message = update.effective_message
+        if message is None:
             return
-        program_id = context.args[0]
-        action = update.effective_message.text.split(maxsplit=1)[0].lstrip("/").split("@", 1)[0]
+        args = context.args
+        if args is None or len(args) != 1:
+            await message.reply_text("Usage: /start <program-id> or /stop <program-id>")
+            return
+        if message.text is None:
+            return
+        program_id = args[0]
+        action = message.text.split(maxsplit=1)[0].lstrip("/").split("@", 1)[0]
         try:
             result = await asyncio.to_thread(getattr(manager, action), program_id)
             running = result.get("running", False)
-            await update.effective_message.reply_text(f"{program_id}: {'running' if running else 'stopped'}")
+            await message.reply_text(f"{program_id}: {'running' if running else 'stopped'}")
         except (KeyError, RuntimeError, ValueError) as error:
-            await update.effective_message.reply_text(str(error))
+            await message.reply_text(str(error))
 
     application = Application.builder().token(token).build()
     application.add_handler(CommandHandler("ip", ip_command))

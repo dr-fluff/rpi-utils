@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 def config_path() -> Path:
@@ -52,12 +53,31 @@ def _process_info(pid: int, proc_root: Path = Path("/proc")) -> dict | None:
         stat = (process_path / "stat").read_text()
         stat_fields = stat[stat.rfind(")") + 1 :].split()
         start_time = int(stat_fields[19])
-        cwd = str((process_path / "cwd").resolve())
     except (IndexError, OSError, ValueError):
         return None
     if not command:
         return None
+    try:
+        cwd = str((process_path / "cwd").resolve())
+    except OSError:
+        cwd = None
     return {"pid": pid, "command": command, "cwd": cwd, "start_time": start_time}
+
+
+def _validated_service_url(url: str | None) -> str | None:
+    if url is None or not url.strip():
+        return None
+    value = url.strip()
+    try:
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError
+        parsed.port
+    except ValueError as error:
+        raise ValueError("Web address must be a valid http:// or https:// URL") from error
+    if parsed.username or parsed.password:
+        raise ValueError("Web address must not contain a username or password")
+    return value
 
 
 class ProgramManager:
@@ -163,16 +183,16 @@ class ProgramManager:
             processes.append(process)
         return sorted(processes, key=lambda process: process["pid"])
 
-    def add_program(self, name: str, command: str, cwd: str | None) -> dict:
-        return self._save_program(name, shlex.split(command), cwd)
+    def add_program(self, name: str, command: str, cwd: str | None, url: str | None = None) -> dict:
+        return self._save_program(name, shlex.split(command), cwd, url)
 
-    def add_running_process(self, name: str, pid: int) -> dict:
+    def add_running_process(self, name: str, pid: int, url: str | None = None) -> dict:
         if pid <= 0 or pid == os.getpid():
             raise ValueError("Invalid process ID")
         process = _process_info(pid)
         if process is None:
             raise ValueError("Process is no longer running or cannot be inspected")
-        program = self._save_program(name, process["command"], process["cwd"])
+        program = self._save_program(name, process["command"], process["cwd"], url)
         programs = self._load()
         saved_program = next(item for item in programs if item["id"] == program["id"])
         saved_program["attached_pid"] = process["pid"]
@@ -180,7 +200,13 @@ class ProgramManager:
         self._save(programs)
         return {**saved_program, "running": True, "pid": process["pid"]}
 
-    def _save_program(self, name: str, command: str | list[str], cwd: str | None) -> dict:
+    def _save_program(
+        self,
+        name: str,
+        command: str | list[str],
+        cwd: str | None,
+        url: str | None = None,
+    ) -> dict:
         try:
             args = command.copy() if isinstance(command, list) else shlex.split(command)
         except ValueError as error:
@@ -196,7 +222,14 @@ class ProgramManager:
         working_dir = str(Path(cwd).expanduser().resolve()) if cwd else None
         if working_dir and not Path(working_dir).is_dir():
             raise ValueError("Working directory does not exist")
-        program = {"id": program_id, "name": name.strip(), "command": args, "cwd": working_dir}
+        service_url = _validated_service_url(url)
+        program = {
+            "id": program_id,
+            "name": name.strip(),
+            "command": args,
+            "cwd": working_dir,
+            "url": service_url,
+        }
         programs.append(program)
         self._save(programs)
         return {**program, "running": False, "pid": None}

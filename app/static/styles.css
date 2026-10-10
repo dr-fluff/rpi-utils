@@ -18,6 +18,8 @@ dialog{width:min(460px,calc(100% - 30px));border:1px solid var(--line);border-ra
 .process-picker-item strong{font-family:var(--mono);font-size:10px}
 .process-picker-item span{margin-top:4px;color:var(--muted);font-size:9px}
 .process-picker[hidden],.field-hint[hidden]{display:none}
+.program-link{display:inline-block;margin-top:6px;color:#278454;font-size:11px;font-weight:700;text-decoration:none}
+.program-link:hover{text-decoration:underline}
 @keyframes arrive{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:620px){.topbar{height:58px;padding:0 5%}.local-status{font-size:8px}main{padding:48px 5% 0}.masthead{align-items:flex-start;flex-direction:column}.masthead-actions{padding:0}.overview{grid-template-columns:1fr 1fr;margin-top:33px}.overview-item{padding:8px 12px}.overview-item:nth-child(2){border:0}.ip-item{grid-column:1/-1;border-top:1px solid var(--line)!important;padding:15px 0 5px!important;margin-top:10px}.section-heading{align-items:center}.section-heading h2{font-size:22px}.button{height:39px;padding:0 11px}.button-accent{font-size:11px}.program-row{gap:8px}.program-main{gap:10px}.program-state{width:55px}.program-actions{gap:5px}.small-button{min-width:58px;padding:0 7px;font-size:10px}.program-command{max-width:57vw}footer{font-size:8px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}

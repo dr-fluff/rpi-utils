@@ -42,11 +42,13 @@ class ProgramInput(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     command: str = Field(min_length=1, max_length=1000)
     cwd: str | None = None
+    url: str | None = Field(default=None, max_length=2048)
 
 
 class RunningProgramInput(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     pid: int = Field(gt=0)
+    url: str | None = Field(default=None, max_length=2048)
 
 
 @asynccontextmanager
@@ -108,7 +110,7 @@ async def running_processes() -> dict:
 @app.post("/api/programs", status_code=201)
 async def add_program(program: ProgramInput) -> dict:
     try:
-        return manager.add_program(program.name, program.command, program.cwd)
+        return manager.add_program(program.name, program.command, program.cwd, program.url)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
@@ -116,7 +118,7 @@ async def add_program(program: ProgramInput) -> dict:
 @app.post("/api/programs/running", status_code=201)
 async def add_running_program(program: RunningProgramInput) -> dict:
     try:
-        return manager.add_running_process(program.name, program.pid)
+        return manager.add_running_process(program.name, program.pid, program.url)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 

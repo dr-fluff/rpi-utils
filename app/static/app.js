@@ -69,7 +69,12 @@ async function refresh() {
         name.className = 'program-name';
         const command = document.createElement('div');
         command.className = 'program-command';
+        const serviceLink = document.createElement('a');
+        serviceLink.className = 'program-link';
+        serviceLink.target = '_blank';
+        serviceLink.rel = 'noopener noreferrer';
         text.append(name, command);
+        text.append(serviceLink);
         main.append(indicator, text);
         const actions = document.createElement('div');
         actions.className = 'program-actions';
@@ -80,11 +85,19 @@ async function refresh() {
         button.addEventListener('click', () => control(program.id, button.dataset.running === 'true'));
         actions.append(state, button);
         row.append(main, actions);
-        entry = { row, indicator, name, command, state, button };
+        entry = { row, indicator, name, command, serviceLink, state, button };
         programRows.set(program.id, entry);
       }
       entry.name.textContent = program.name;
       entry.command.textContent = program.command.join(' ');
+      entry.serviceLink.hidden = !program.url;
+      if (program.url) {
+        entry.serviceLink.href = program.url;
+        entry.serviceLink.textContent = `Open web interface ↗`;
+      } else {
+        entry.serviceLink.removeAttribute('href');
+        entry.serviceLink.textContent = '';
+      }
       entry.indicator.classList.toggle('running', program.running);
       entry.state.classList.toggle('running', program.running);
       entry.state.textContent = program.running ? `RUNNING${program.pid ? ` · ${program.pid}` : ''}` : 'STOPPED';
@@ -200,7 +213,12 @@ form.addEventListener('submit', async event => {
     await request('/api/programs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: values.name, command: values.command, cwd: values.cwd || null }),
+      body: JSON.stringify({
+        name: values.name,
+        command: values.command,
+        cwd: values.cwd || null,
+        url: values.url || null,
+      }),
     });
     form.reset();
     dialog.close();
@@ -216,7 +234,7 @@ runningForm.addEventListener('submit', async event => {
     await request('/api/programs/running', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: values.name, pid: Number(values.pid) }),
+      body: JSON.stringify({ name: values.name, pid: Number(values.pid), url: values.url || null }),
     });
     runningDialog.close();
     await refresh();

@@ -3,10 +3,11 @@ import os
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from app.programs import ProgramManager, _mac_process_info
+from app.programs import ProgramManager, _mac_process_info, _process_info
 from app.telegram.bot import allowed_chat_ids
 
 
@@ -44,6 +45,23 @@ class ProgramManagerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "already exists"):
             self.manager.add_program("Worker", "python -V", None)
 
+    def test_program_saves_optional_http_service_url(self):
+        program = self.manager.add_program(
+            "AdGuard",
+            "/usr/bin/adguard",
+            None,
+            " http://192.168.0.10:3000 ",
+        )
+
+        self.assertEqual(program["url"], "http://192.168.0.10:3000")
+        self.assertEqual(self.manager.list_programs()[0]["url"], "http://192.168.0.10:3000")
+
+    def test_program_rejects_non_http_service_url(self):
+        with self.assertRaisesRegex(ValueError, "http:// or https://"):
+            self.manager.add_program("Unsafe", "unsafe", None, "javascript:alert(1)")
+
+        self.assertEqual(self.manager.list_programs(), [])
+
     def test_import_running_process_persists_attachment_and_does_not_duplicate(self):
         process = {
             "pid": 4321,
@@ -56,7 +74,7 @@ class ProgramManagerTests(unittest.TestCase):
             patch("app.programs._is_macos", return_value=False),
             patch("app.programs.Path.iterdir", return_value=[]),
         ):
-            program = self.manager.add_running_process("Example service", 4321)
+            program = self.manager.add_running_process("Example service", 4321, "http://192.168.0.10:3000")
             self.assertTrue(program["running"])
             self.assertEqual(program["pid"], 4321)
             self.assertEqual(self.manager.list_running_processes(), [])
@@ -66,6 +84,7 @@ class ProgramManagerTests(unittest.TestCase):
         self.assertEqual(saved["command"], process["command"])
         self.assertEqual(saved["attached_pid"], 4321)
         self.assertEqual(saved["attached_start_time"], 987654)
+        self.assertEqual(saved["url"], "http://192.168.0.10:3000")
         process_info.assert_called_once_with(4321)
 
         restored_manager = ProgramManager()
@@ -115,6 +134,38 @@ class ProgramManagerTests(unittest.TestCase):
                 "command": ["/usr/bin/wg-quick", "up", "wg0"],
                 "cwd": None,
                 "start_time": "Sat Oct 10 14:33:45 2026",
+            },
+        )
+
+    def test_linux_process_is_listed_when_working_directory_is_not_accessible(self):
+        process_root = Path(self.temporary_directory.name) / "proc"
+        process_path = process_root / "4321"
+        process_path.mkdir(parents=True)
+        (process_path / "cmdline").write_bytes(b"/usr/bin/AdGuardHome\0-s\0run\0")
+        stat_fields = ["S"] + ["0"] * 18 + ["987654"]
+        (process_path / "stat").write_text(f"4321 (AdGuardHome) {' '.join(stat_fields)}")
+        (process_path / "cwd").symlink_to(self.temporary_directory.name)
+
+        original_resolve = Path.resolve
+
+        def resolve(path, *args, **kwargs):
+            if path == process_path / "cwd":
+                raise PermissionError("permission denied")
+            return original_resolve(path, *args, **kwargs)
+
+        with (
+            patch("app.programs._is_macos", return_value=False),
+            patch("app.programs.Path.resolve", autospec=True, side_effect=resolve),
+        ):
+            process = _process_info(4321, process_root)
+
+        self.assertEqual(
+            process,
+            {
+                "pid": 4321,
+                "command": ["/usr/bin/AdGuardHome", "-s", "run"],
+                "cwd": None,
+                "start_time": 987654,
             },
         )
 

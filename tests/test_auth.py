@@ -1,23 +1,33 @@
 import asyncio
 import json
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from fastapi import HTTPException, Request, Response
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocket, WebSocketState
+from starlette.types import Message
 
 from app.auth import (
     SESSION_COOKIE,
     SESSION_DURATION,
+    change_password,
     clear_login_limiter,
     login_is_limited,
     record_login_failure,
     session_token,
     valid_session,
 )
-from app.main import LoginInput, LocalOnlyMiddleware, app, auth_login, auth_status
+from app.main import (
+    LoginInput,
+    LocalOnlyMiddleware,
+    app,
+    auth_login,
+    auth_status,
+)
 from app.terminal import terminal_socket
 
 
@@ -98,6 +108,43 @@ class AuthSessionTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.status_code, 500)
 
+    def test_change_password_persists_atomically_and_preserves_other_settings(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            env_path = Path(temporary_directory) / ".config" / "rpi-utils" / "env"
+            env_path.parent.mkdir(parents=True)
+            env_path.write_text(
+                "TELEGRAM_BOT_TOKEN=keep-this\n"
+                'RPI_UTILS_WEB_PASSWORD="temporary-password"\n'
+                "RPI_UTILS_PASSWORD_CHANGE_REQUIRED=1\n"
+            )
+            with (
+                patch("app.auth.Path.home", return_value=Path(temporary_directory)),
+                patch.dict(
+                    os.environ,
+                    {
+                        "RPI_UTILS_WEB_PASSWORD": "temporary-password",
+                        "RPI_UTILS_PASSWORD_CHANGE_REQUIRED": "1",
+                    },
+                ),
+            ):
+                change_password('new-"quoted"\\password')
+                self.assertEqual(
+                    os.environ["RPI_UTILS_WEB_PASSWORD"],
+                    'new-"quoted"\\password',
+                )
+                self.assertEqual(os.environ["RPI_UTILS_PASSWORD_CHANGE_REQUIRED"], "0")
+                contents = env_path.read_text()
+                mode = env_path.stat().st_mode & 0o777
+
+        self.assertIn("TELEGRAM_BOT_TOKEN=keep-this", contents)
+        self.assertIn('RPI_UTILS_WEB_PASSWORD="new-\\"quoted\\"\\\\password"', contents)
+        self.assertIn('RPI_UTILS_PASSWORD_CHANGE_REQUIRED="0"', contents)
+        self.assertEqual(mode, 0o600)
+
+    def test_change_password_rejects_control_characters(self):
+        with self.assertRaisesRegex(ValueError, "control characters"):
+            change_password("valid-length-password\nwith-line-break")
+
 
 class AuthMiddlewareTests(unittest.IsolatedAsyncioTestCase):
     async def test_auth_status_exposes_terminal_only_for_local_no_password_session(self):
@@ -115,7 +162,12 @@ class AuthMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             status,
-            {"enabled": False, "authenticated": True, "terminal_available": True},
+            {
+                "enabled": False,
+                "authenticated": True,
+                "must_change_password": False,
+                "terminal_available": True,
+            },
         )
         self.assertEqual(response.headers["Cache-Control"], "no-store")
 
@@ -151,6 +203,30 @@ class AuthMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(api_response.status_code, 401)
         self.assertEqual(page_response.status_code, 204)
+
+    async def test_temporary_password_session_cannot_use_dashboard_apis(self):
+        middleware = LocalOnlyMiddleware(app)
+        password = "temporary-password"
+        token = session_token(password)
+        with patch.dict(
+            os.environ,
+            {
+                "RPI_UTILS_WEB_PASSWORD": password,
+                "RPI_UTILS_PASSWORD_CHANGE_REQUIRED": "1",
+                "RPI_UTILS_ALLOWED_HOSTS": "pi-console.home.arpa",
+            },
+        ):
+            blocked_response = await middleware.dispatch(
+                make_request(cookie=token),
+                self.next_response,
+            )
+            allowed_response = await middleware.dispatch(
+                make_request(path="/api/auth/password", cookie=token),
+                self.next_response,
+            )
+
+        self.assertEqual(blocked_response.status_code, 403)
+        self.assertEqual(allowed_response.status_code, 204)
 
     async def test_local_development_can_use_dashboard_without_password(self):
         middleware = LocalOnlyMiddleware(app)
@@ -231,6 +307,37 @@ class AuthMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(client.post("/api/auth/logout").status_code, 200)
             self.assertEqual(client.get("/api/status").status_code, 401)
 
+    def test_first_login_requires_password_change_before_api_access(self):
+        clear_login_limiter()
+        password = "temporary-password"
+        with (
+            tempfile.TemporaryDirectory() as temporary_directory,
+            patch("app.auth.Path.home", return_value=Path(temporary_directory)),
+            patch.dict(
+                os.environ,
+                {
+                    "RPI_UTILS_WEB_PASSWORD": password,
+                    "RPI_UTILS_PASSWORD_CHANGE_REQUIRED": "1",
+                    "RPI_UTILS_ALLOWED_HOSTS": "pi-console.home.arpa",
+                },
+            ),
+            TestClient(app, base_url="https://pi-console.home.arpa") as client,
+        ):
+            self.assertEqual(
+                client.post("/api/auth/login", json={"password": password}).status_code,
+                200,
+            )
+            status = client.get("/api/auth/status").json()
+            self.assertTrue(status["must_change_password"])
+            self.assertEqual(client.get("/api/status").status_code, 403)
+            response = client.post(
+                "/api/auth/password",
+                json={"password": "user-selected-new-password"},
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(client.get("/api/status").status_code, 200)
+            self.assertFalse(client.get("/api/auth/status").json()["must_change_password"])
+
     def test_authenticated_terminal_runs_a_pty_shell(self):
         password = "long-enough-test-password"
         socket = FakeTerminalSocket(password)
@@ -260,7 +367,8 @@ class AuthMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(socket.close_code, 4403)
 
     @staticmethod
-    async def next_response(_request, call_next=None):
+    async def next_response(request: Request) -> Response:
+        _ = request
         return Response(status_code=204)
 
 
@@ -271,7 +379,7 @@ class FakeTerminalSocket(WebSocket):
         self.close_code = None
         self.close_reason = ""
 
-        async def receive():
+        async def receive() -> Message:
             if self.application_state == WebSocketState.CONNECTING:
                 return {"type": "websocket.connect"}
             if not self.received_input:
@@ -280,7 +388,8 @@ class FakeTerminalSocket(WebSocket):
                     "type": "websocket.receive",
                     "text": json.dumps({"type": "input", "data": "printf 'PTY_READY\\n'; exit\n"}),
                 }
-            await asyncio.Future()
+            await asyncio.Future[Message]()
+            raise asyncio.CancelledError
 
         async def send(message):
             if message["type"] == "websocket.send":

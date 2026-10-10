@@ -20,6 +20,7 @@ from app.auth import (
     SESSION_DURATION,
     configured_password,
     is_loopback_host,
+    password_change_required,
     valid_session,
 )
 
@@ -59,7 +60,8 @@ async def terminal_socket(websocket: WebSocket) -> None:
         and is_loopback_host(websocket.client.host)
     )
     if (
-        (password is None and not loopback_client)
+        password_change_required()
+        or (password is None and not loopback_client)
         or (password is not None and not valid_session(password, token))
         or not (
             websocket.url.scheme in {"wss", "https"}

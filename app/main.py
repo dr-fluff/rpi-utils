@@ -23,10 +23,12 @@ from app.auth import (
     SESSION_COOKIE,
     SESSION_DURATION,
     allowed_hosts,
+    change_password,
     clear_login_failures,
     configured_password,
     is_loopback_host,
     login_is_limited,
+    password_change_required,
     record_login_failure,
     session_token,
     valid_session,
@@ -73,6 +75,10 @@ class CommandInput(BaseModel):
 
 class LoginInput(BaseModel):
     password: str = Field(min_length=1, max_length=1024)
+
+
+class PasswordChangeInput(BaseModel):
+    password: str = Field(min_length=MINIMUM_PASSWORD_LENGTH, max_length=1024)
 
 
 @asynccontextmanager
@@ -127,6 +133,22 @@ class LocalOnlyMiddleware(BaseHTTPMiddleware):
             token = request.cookies.get(SESSION_COOKIE)
             if not valid_session(password, token):
                 return JSONResponse({"detail": "Authentication required"}, status_code=401)
+        if (
+            password
+            and password_change_required()
+            and request.url.path not in {
+                "/",
+                "/api/auth/status",
+                "/api/auth/login",
+                "/api/auth/password",
+                "/api/auth/logout",
+            }
+            and not request.url.path.startswith("/static/")
+        ):
+            return JSONResponse(
+                {"detail": "Change the temporary dashboard password before continuing"},
+                status_code=403,
+            )
         return await call_next(request)
 
 
@@ -150,6 +172,11 @@ async def auth_status(request: Request, response: Response) -> dict:
         "authenticated": password is None or valid_session(
             password,
             request.cookies.get(SESSION_COOKIE),
+        ),
+        "must_change_password": (
+            password is not None
+            and valid_session(password, request.cookies.get(SESSION_COOKIE))
+            and password_change_required()
         ),
         "terminal_available": password is not None or local_access,
     }
@@ -176,6 +203,37 @@ async def auth_login(login: LoginInput, request: Request, response: Response) ->
     response.set_cookie(
         SESSION_COOKIE,
         session_token(password),
+        max_age=SESSION_DURATION,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="strict",
+        path="/",
+    )
+    return {"authenticated": True}
+
+
+@app.post("/api/auth/password")
+async def auth_change_password(
+    change: PasswordChangeInput,
+    request: Request,
+    response: Response,
+) -> dict:
+    current_password = configured_password()
+    if current_password is None or not valid_session(
+        current_password,
+        request.cookies.get(SESSION_COOKIE),
+    ):
+        raise HTTPException(status_code=401, detail="Sign in before changing the password")
+    try:
+        change_password(change.password)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except OSError as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+    response.headers["Cache-Control"] = "no-store"
+    response.set_cookie(
+        SESSION_COOKIE,
+        session_token(change.password),
         max_age=SESSION_DURATION,
         httponly=True,
         secure=request.url.scheme == "https",

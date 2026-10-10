@@ -3,7 +3,7 @@ set -euo pipefail
 
 echo "Starting Pi Console installation..."
 STEP=0
-TOTAL_STEPS=7
+TOTAL_STEPS=8
 progress() {
 	STEP=$((STEP + 1))
 	printf '\n[%d/%d] %s\n' "${STEP}" "${TOTAL_STEPS}" "$1"
@@ -17,6 +17,7 @@ PYTHON="$(command -v python3)"
 UPGRADE_HELPER="/usr/local/sbin/rpi-utils-system-upgrade"
 REBOOT_HELPER="/usr/local/sbin/rpi-utils-reboot"
 SUDOERS_FILE="/etc/sudoers.d/rpi-utils-updater"
+AUTH_ENV_FILE="${SERVICE_HOME}/.config/rpi-utils/env"
 
 if [[ "$(id -u)" -ne 0 ]]; then
 	echo "Run with sudo: sudo ./install.sh" >&2
@@ -25,6 +26,24 @@ fi
 if [[ ! -d "${PROJECT_DIR}/.git" ]]; then
 	echo "Install from a Git checkout so the updater can pull releases." >&2
 	exit 1
+fi
+if [[ -z "${SERVICE_HOME}" ]]; then
+	echo "Could not determine the home directory for ${SERVICE_USER}." >&2
+	exit 1
+fi
+
+progress "Preparing dashboard sign-in"
+install -d -o "${SERVICE_USER}" -m 0700 "$(dirname "${AUTH_ENV_FILE}")"
+touch "${AUTH_ENV_FILE}"
+chown "${SERVICE_USER}" "${AUTH_ENV_FILE}"
+chmod 0600 "${AUTH_ENV_FILE}"
+TEMP_PASSWORD=""
+if ! grep -Eq '^[[:space:]]*RPI_UTILS_WEB_PASSWORD[[:space:]]*=[[:space:]]*[^[:space:]#]' "${AUTH_ENV_FILE}"; then
+	TEMP_PASSWORD="$("${PYTHON}" -c 'import secrets; print(secrets.token_urlsafe(24))')"
+	printf '\nRPI_UTILS_WEB_PASSWORD=%s\nRPI_UTILS_PASSWORD_CHANGE_REQUIRED=1\n' \
+		"${TEMP_PASSWORD}" >> "${AUTH_ENV_FILE}"
+	chown "${SERVICE_USER}" "${AUTH_ENV_FILE}"
+	chmod 0600 "${AUTH_ENV_FILE}"
 fi
 
 progress "Creating Python virtual environment"
@@ -74,3 +93,31 @@ systemctl enable rpi-utils.service
 systemctl restart rpi-utils.service
 echo "Pi Console is listening on 127.0.0.1:8002. Configure Caddy for HTTPS before remote access."
 echo "Optional Telegram settings: ${SERVICE_HOME}/.config/rpi-utils/env"
+LOGIN_HOST="$("${PYTHON}" - "${AUTH_ENV_FILE}" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+for line in Path(sys.argv[1]).read_text().splitlines():
+    match = re.match(r"^\s*RPI_UTILS_ALLOWED_HOSTS\s*=\s*(.*?)\s*$", line)
+    if not match:
+        continue
+    hosts = match.group(1).strip("\"'")
+    host = hosts.split(",", 1)[0].strip()
+    if re.fullmatch(r"[A-Za-z0-9.-]+", host):
+        print(host)
+        break
+PY
+)"
+if [[ -n "${LOGIN_HOST}" ]]; then
+	echo "Login URL: https://${LOGIN_HOST}/"
+else
+	echo "Login URL (local only): http://127.0.0.1:8002/"
+	echo "For LAN access, configure Caddy and RPI_UTILS_ALLOWED_HOSTS, then open https://<your-caddy-hostname>/."
+fi
+if [[ -n "${TEMP_PASSWORD}" ]]; then
+	echo
+	echo "Temporary dashboard password (change it after first sign-in): ${TEMP_PASSWORD}"
+else
+	echo "Existing dashboard password preserved."
+fi

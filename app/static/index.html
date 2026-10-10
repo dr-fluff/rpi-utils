@@ -23,10 +23,24 @@
       <button class="button button-dark" type="submit">Sign in</button>
     </form>
   </section>
+  <section id="password-screen" class="login-screen" hidden>
+    <form id="password-form" class="login-card">
+      <span class="brand-mark">π</span>
+      <p class="eyebrow">ACCOUNT SECURITY</p>
+      <h1 id="password-heading">Change password.</h1>
+      <p id="password-intro" class="field-hint">Choose a new password with at least 12 characters.</p>
+      <label for="new-password">New password</label>
+      <input id="new-password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required>
+      <label for="confirm-password">Confirm new password</label>
+      <input id="confirm-password" name="confirm-password" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required>
+      <p id="password-error" class="login-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button id="cancel-password-change" class="button button-quiet" type="button">Cancel</button><button class="button button-dark" type="submit">Save password</button></div>
+    </form>
+  </section>
   <div id="dashboard-app" hidden>
   <header class="topbar">
     <a class="brand" href="/" aria-label="Pi Console home"><span class="brand-mark">π</span><span>PI<span class="brand-light">CONSOLE</span></span></a>
-    <div class="topbar-actions"><div class="local-status"><span class="status-dot"></span> LOCAL DEVICE <span class="divider">/</span> <span id="clock">--:--:--</span></div><button id="logout-button" class="text-action">Sign out</button></div>
+    <div class="topbar-actions"><div class="local-status"><span class="status-dot"></span> LOCAL DEVICE <span class="divider">/</span> <span id="clock">--:--:--</span></div><button id="change-password-button" class="text-action">Change password</button><button id="logout-button" class="text-action">Sign out</button></div>
   </header>
 
   <section id="update-banner" class="update-banner" role="status" aria-live="polite" hidden>

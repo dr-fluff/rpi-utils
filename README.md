@@ -30,7 +30,7 @@ Replace both placeholders with the Pi's SSH username and LAN address. The SSH pa
 
 ### Secure Caddy access and web terminal
 
-The installer keeps Pi Console on loopback and trusts forwarded HTTPS information only from Caddy on `127.0.0.1`. Add a Caddy site for a hostname that resolves to the Pi on your LAN. For a LAN-only hostname, Caddy can issue an internal certificate. Add this site to `/etc/caddy/Caddyfile`:
+The installer keeps Pi Console on loopback and trusts forwarded HTTPS information only from Caddy on `127.0.0.1`. On a fresh install, it creates a temporary dashboard password, requires a password change after first sign-in, and prints the temporary password and login URL at the end. Add a Caddy site for a hostname that resolves to the Pi on your LAN. For a LAN-only hostname, Caddy can issue an internal certificate. Add this site to `/etc/caddy/Caddyfile`:
 
 ```caddyfile
 pi-console.home.arpa {
@@ -39,7 +39,7 @@ pi-console.home.arpa {
 }
 ```
 
-Validate and reload Caddy, then set the hostname and a strong, unique password in `~/.config/rpi-utils/env` (generate a password with `openssl rand -hex 32`):
+Validate and reload Caddy, then add the hostname to `~/.config/rpi-utils/env`:
 
 ```sh
 sudo caddy validate --config /etc/caddy/Caddyfile
@@ -53,10 +53,9 @@ Put these values in the env file (use the hostname from the Caddy site, without 
 
 ```sh
 RPI_UTILS_ALLOWED_HOSTS=pi-console.home.arpa
-RPI_UTILS_WEB_PASSWORD=replace-with-a-long-random-password
 ```
 
-Keep that file private. Caddy must be configured to serve the same hostname; the app rejects unlisted hostnames and remote HTTP access. Trust Caddy's local root certificate on each client device before signing in, or use a publicly trusted certificate for a domain you control. The login protects the dashboard APIs as well as the terminal, uses an eight-hour HTTP-only session cookie, and rate-limits failed logins. The terminal runs as the Pi Console service account, not root; it has that account's normal filesystem permissions and the limited sudo permissions configured by the installer.
+Keep that file private and do not remove the installer-generated `RPI_UTILS_WEB_PASSWORD` or `RPI_UTILS_PASSWORD_CHANGE_REQUIRED` entries. The installer prints a temporary password once; after first sign-in, Pi Console requires you to set a new password. Caddy must be configured to serve the same hostname; the app rejects unlisted hostnames and remote HTTP access. Trust Caddy's local root certificate on each client device before signing in, or use a publicly trusted certificate for a domain you control. The login protects the dashboard APIs as well as the terminal, uses an eight-hour HTTP-only session cookie, and rate-limits failed logins. Use **Change password** in the dashboard header to update it later. The terminal runs as the Pi Console service account, not root; it has that account's normal filesystem permissions and the limited sudo permissions configured by the installer.
 
 After authentication is configured, re-run `sudo ./install.sh` once to apply the loopback-only service binding, restart the service, then open the dashboard over Caddy's HTTPS URL and use **Terminal**. The browser terminal uses a PTY with the service account's interactive shell. Loopback HTTP is allowed for local development or an SSH tunnel; remote access requires HTTPS. The terminal client is bundled locally (xterm.js 6.0.0), so it does not depend on a third-party CDN.
 

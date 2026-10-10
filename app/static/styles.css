@@ -34,6 +34,7 @@ dialog{width:min(460px,calc(100% - 30px));border:1px solid var(--line);border-ra
 .login-card h1{font-size:38px}
 .login-card label{margin-top:24px}
 .login-card .button{width:100%;margin-top:18px}
+.login-card .dialog-actions .button{width:auto;flex:1;margin-top:12px}
 .login-error{color:#a34d3b;font-size:12px}
 .topbar-actions{display:flex;align-items:center;gap:20px}
 .topbar-actions .text-action{align-self:center}

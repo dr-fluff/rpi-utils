@@ -18,6 +18,13 @@ const loginScreen = document.querySelector('#login-screen');
 const loginForm = document.querySelector('#login-form');
 const loginError = document.querySelector('#login-error');
 const loginPassword = document.querySelector('#login-password');
+const passwordScreen = document.querySelector('#password-screen');
+const passwordForm = document.querySelector('#password-form');
+const passwordHeading = document.querySelector('#password-heading');
+const passwordIntro = document.querySelector('#password-intro');
+const newPassword = document.querySelector('#new-password');
+const confirmPassword = document.querySelector('#confirm-password');
+const passwordError = document.querySelector('#password-error');
 const terminalButton = document.querySelector('#terminal-button');
 const terminalDialog = document.querySelector('#terminal-dialog');
 const terminalElement = document.querySelector('#terminal');
@@ -49,23 +56,40 @@ function showLogin(message = '') {
   authActive = false;
   dashboardIntervals.forEach(window.clearInterval);
   dashboardIntervals = [];
+  dashboardApp.hidden = true;
+  passwordScreen.hidden = true;
+  loginScreen.hidden = false;
   if (terminalSocket) terminalSocket.close();
   if (terminalDialog.open) terminalDialog.close();
   terminalInstance?.dispose();
   terminalSocket = null;
   terminalInstance = null;
-  dashboardApp.hidden = true;
-  loginScreen.hidden = false;
   loginError.textContent = message;
   loginError.hidden = !message;
   loginPassword.focus();
 }
 
+function showPasswordChange(required) {
+  dashboardApp.hidden = true;
+  loginScreen.hidden = true;
+  passwordScreen.hidden = false;
+  passwordHeading.textContent = required ? 'Set your password.' : 'Change password.';
+  passwordIntro.textContent = required
+    ? 'For security, replace the temporary install password before using the dashboard.'
+    : 'Choose a new password with at least 12 characters.';
+  document.querySelector('#cancel-password-change').hidden = required;
+  passwordError.hidden = true;
+  passwordForm.reset();
+  newPassword.focus();
+}
+
 function showDashboard() {
   authActive = true;
   loginScreen.hidden = true;
+  passwordScreen.hidden = true;
   dashboardApp.hidden = false;
   document.querySelector('#logout-button').hidden = !authEnabled;
+  document.querySelector('#change-password-button').hidden = !authEnabled;
   initializeDashboard();
 }
 
@@ -74,7 +98,8 @@ async function initializeAuth() {
     const status = await request('/api/auth/status');
     authEnabled = status.enabled;
     terminalButton.hidden = !status.terminal_available;
-    if (status.authenticated) showDashboard();
+    if (status.authenticated && status.must_change_password) showPasswordChange(true);
+    else if (status.authenticated) showDashboard();
     else showLogin();
   } catch (error) {
     showLogin(`Could not check sign-in status: ${error.message}`);
@@ -97,6 +122,33 @@ loginForm.addEventListener('submit', async event => {
     loginError.hidden = false;
   }
 });
+
+passwordForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  passwordError.hidden = true;
+  if (newPassword.value !== confirmPassword.value) {
+    passwordError.textContent = 'The passwords do not match.';
+    passwordError.hidden = false;
+    confirmPassword.focus();
+    return;
+  }
+  try {
+    await request('/api/auth/password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: newPassword.value }),
+    });
+    passwordForm.reset();
+    showNotice('Password changed.');
+    showDashboard();
+  } catch (error) {
+    passwordError.textContent = error.message;
+    passwordError.hidden = false;
+  }
+});
+
+document.querySelector('#change-password-button').addEventListener('click', () => showPasswordChange(false));
+document.querySelector('#cancel-password-change').addEventListener('click', showDashboard);
 
 document.querySelector('#logout-button').addEventListener('click', async () => {
   try {

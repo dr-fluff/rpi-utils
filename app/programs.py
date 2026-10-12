@@ -104,8 +104,10 @@ class ProgramManager:
         temporary.replace(self.path)
 
     def list_programs(self) -> list[dict]:
+        programs = self._load()
         result = []
-        for program in self._load():
+        unmatched = []
+        for index, program in enumerate(programs):
             process = self.processes.get(program["id"])
             if process is not None and process.poll() is None:
                 pid = process.pid
@@ -118,6 +120,8 @@ class ProgramManager:
                     and attached["start_time"] == program.get("attached_start_time")
                 )
                 pid = attached_pid if running else None
+                if not running:
+                    unmatched.append(index)
             result.append(
                 {
                     **program,
@@ -125,6 +129,31 @@ class ProgramManager:
                     "pid": pid,
                 }
             )
+
+        if unmatched:
+            candidates = self.list_running_processes()
+            changed = False
+            for index in unmatched:
+                program = programs[index]
+                match_index = next(
+                    (
+                        candidate_index
+                        for candidate_index, candidate in enumerate(candidates)
+                        if candidate["command"] == program["command"]
+                        and (program["cwd"] is None or candidate["cwd"] == program["cwd"])
+                    ),
+                    None,
+                )
+                if match_index is None:
+                    continue
+                process = candidates.pop(match_index)
+                program["attached_pid"] = process["pid"]
+                program["attached_start_time"] = process["start_time"]
+                result[index]["running"] = True
+                result[index]["pid"] = process["pid"]
+                changed = True
+            if changed:
+                self._save(programs)
         return result
 
     def list_running_processes(self) -> list[dict]:

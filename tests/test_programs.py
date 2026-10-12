@@ -163,6 +163,61 @@ class ProgramManagerTests(unittest.TestCase):
         self.assertTrue(restored_program["running"])
         self.assertEqual(restored_program["pid"], 4321)
 
+    def test_list_programs_reattaches_after_pid_changes(self):
+        previous_process = {
+            "pid": 4321,
+            "command": ["/usr/bin/example-service", "--foreground"],
+            "cwd": self.temporary_directory.name,
+            "start_time": 987654,
+        }
+        with patch("app.programs._process_info", return_value=previous_process):
+            program = self.manager.add_running_process("Example service", 4321)
+
+        replacement_process = {
+            **previous_process,
+            "pid": 8765,
+            "cwd": self.manager._load()[0]["cwd"],
+            "start_time": 987655,
+        }
+        with (
+            patch("app.programs._process_info", return_value=None),
+            patch.object(self.manager, "list_running_processes", return_value=[replacement_process]),
+        ):
+            listed = self.manager.list_programs()
+
+        self.assertTrue(listed[0]["running"])
+        self.assertEqual(listed[0]["pid"], 8765)
+        saved = self.manager._load()[0]
+        self.assertEqual(saved["attached_pid"], 8765)
+        self.assertEqual(saved["attached_start_time"], 987655)
+        self.assertEqual(program["id"], saved["id"])
+
+    def test_restarted_manager_reattaches_to_an_existing_saved_program_process(self):
+        program = self.manager.add_program(
+            "Example service",
+            "/usr/bin/example-service --foreground",
+            self.temporary_directory.name,
+        )
+        restarted_manager = ProgramManager()
+        replacement_process = {
+            "pid": 8765,
+            "command": program["command"],
+            "cwd": program["cwd"],
+            "start_time": 987655,
+        }
+        with patch.object(
+            restarted_manager,
+            "list_running_processes",
+            return_value=[replacement_process],
+        ):
+            listed = restarted_manager.list_programs()
+
+        self.assertTrue(listed[0]["running"])
+        self.assertEqual(listed[0]["pid"], 8765)
+        saved = restarted_manager._load()[0]
+        self.assertEqual(saved["attached_pid"], 8765)
+        self.assertEqual(saved["attached_start_time"], 987655)
+
     def test_list_running_processes_uses_ps_on_macos(self):
         ps_output = (
             " 4321 Sat Oct 10 14:33:45 2026 /usr/bin/wg-quick up wg0\n"

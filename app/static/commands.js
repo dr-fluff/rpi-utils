@@ -230,9 +230,9 @@ async function executeCommand(name) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ args }),
     });
-    showNotice(result.message);
+    window.showCommandOutput(name, command.description, result);
   } catch (error) {
-    showNotice(error.message, true);
+    window.showCommandOutput(name, command.description, null, error.message);
   }
 }
 

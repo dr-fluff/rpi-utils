@@ -272,10 +272,17 @@ async function refresh() {
 
 async function control(id, running) {
   try {
-    await runCommand(running ? 'stop' : 'start', [id]);
+    const name = running ? 'stop' : 'start';
+    const result = await runCommand(name, [id]);
+    if (result) {
+      const command = commandDefinitions.get(name);
+      window.showCommandOutput(name, command?.description, result);
+    }
     await refresh();
   } catch (error) {
-    showNotice(error.message);
+    const name = running ? 'stop' : 'start';
+    const command = commandDefinitions.get(name);
+    window.showCommandOutput(name, command?.description, null, error.message);
   }
 }
 
@@ -650,11 +657,13 @@ updateBannerAction.addEventListener('click', async () => {
     const result = await runCommand('update');
     if (!result) return;
     updateBanner.hidden = true;
-    showNotice(result.message);
+    const command = commandDefinitions.get('update');
+    window.showCommandOutput('update', command?.description, result);
     if (result.restarting) window.setTimeout(() => window.location.reload(), 5000);
     else await checkForUpdates();
   } catch (error) {
-    showNotice(error.message);
+    const command = commandDefinitions.get('update');
+    window.showCommandOutput('update', command?.description, null, error.message);
   }
 });
 

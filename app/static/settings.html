@@ -5,14 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f3f4ee">
   <title>Settings · Pi Console</title>
-  <link rel="stylesheet" href="/static/styles.css?v=7">
-  <script src="/static/settings.js?v=1" defer></script>
+  <link rel="stylesheet" href="/static/styles.css?v=8">
+  <script src="/static/navigation.js?v=1" defer></script>
+  <script src="/static/settings.js?v=3" defer></script>
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="/" aria-label="Pi Console home"><span class="brand-mark">π</span><span>PI<span class="brand-light">CONSOLE</span></span></a>
-    <div class="topbar-actions"><span class="local-status"><span class="status-dot"></span> DEVICE SETTINGS</span><a class="button button-quiet icon-button" href="/commands" title="Commands" aria-label="Commands"><span class="fa-icon fa-terminal" aria-hidden="true"></span></a><a class="button button-quiet icon-button" href="/" title="Dashboard" aria-label="Dashboard"><span class="fa-icon fa-house" aria-hidden="true"></span></a></div>
-  </header>
+  <div id="site-navigation" data-page="settings"></div>
   <main class="commands-page">
     <section class="masthead">
       <div><p class="eyebrow">CONTROL SURFACE / DEVICE CONFIGURATION</p><h1>Device<br><span>settings.</span></h1></div>
@@ -44,6 +42,22 @@
         <p class="field-hint">Only these Telegram chats can control the device. Find your chat ID using a trusted Telegram bot, then enter each ID on its own line or separate them with commas.</p>
         <p id="telegram-form-error" class="login-error" role="alert" hidden></p>
         <div class="dialog-actions"><button class="button button-dark icon-button" type="submit" title="Save Telegram settings" aria-label="Save Telegram settings"><span class="fa-icon fa-floppy-disk" aria-hidden="true"></span></button></div>
+      </form>
+    </section>
+
+    <section id="account-settings" class="commands-group" aria-labelledby="account-settings-heading">
+      <div class="section-heading"><div><p class="eyebrow">ACCOUNT</p><h2 id="account-settings-heading">Password and sign-in</h2></div></div>
+      <form id="change-password-form" class="settings-form">
+        <p id="account-settings-notice" class="field-hint" hidden></p>
+        <label for="settings-new-password">New password</label>
+        <input id="settings-new-password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required>
+        <label for="settings-confirm-password">Confirm new password</label>
+        <input id="settings-confirm-password" name="confirm-password" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required>
+        <p id="change-password-error" class="login-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="change-password-submit" class="button button-dark icon-button" type="submit" title="Change password" aria-label="Change password"><span class="fa-icon fa-key" aria-hidden="true"></span></button>
+          <button id="logout-button" class="button button-quiet icon-button" type="button" title="Sign out" aria-label="Sign out"><span class="fa-icon fa-right-from-bracket" aria-hidden="true"></span></button>
+        </div>
       </form>
     </section>
 

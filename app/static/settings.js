@@ -9,6 +9,12 @@ const telegramStatus = document.querySelector('#telegram-status');
 const telegramTokenStatus = document.querySelector('#telegram-token-status');
 const telegramFormError = document.querySelector('#telegram-form-error');
 const settingsNotice = document.querySelector('#settings-notice');
+const changePasswordForm = document.querySelector('#change-password-form');
+const changePasswordError = document.querySelector('#change-password-error');
+const accountSettingsNotice = document.querySelector('#account-settings-notice');
+const changePasswordSubmit = document.querySelector('#change-password-submit');
+const newPasswordInput = document.querySelector('#settings-new-password');
+const confirmPasswordInput = document.querySelector('#settings-confirm-password');
 
 async function api(url, options) {
   const response = await fetch(url, options);
@@ -91,6 +97,38 @@ telegramSettingsForm.addEventListener('submit', async event => {
   }
 });
 
+changePasswordForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  changePasswordError.hidden = true;
+  if (newPasswordInput.value !== confirmPasswordInput.value) {
+    changePasswordError.textContent = 'The passwords do not match.';
+    changePasswordError.hidden = false;
+    confirmPasswordInput.focus();
+    return;
+  }
+  try {
+    await api('/api/auth/password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: newPasswordInput.value }),
+    });
+    changePasswordForm.reset();
+    showNotice('Password changed.');
+  } catch (error) {
+    changePasswordError.textContent = error.message;
+    changePasswordError.hidden = false;
+  }
+});
+
+document.querySelector('#logout-button').addEventListener('click', async () => {
+  try {
+    await api('/api/auth/logout', { method: 'POST' });
+    window.location.assign('/');
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+});
+
 clearTelegramTokenInput.addEventListener('change', () => {
   if (clearTelegramTokenInput.checked) telegramBotTokenInput.value = '';
   telegramBotTokenInput.disabled = clearTelegramTokenInput.checked;
@@ -101,6 +139,13 @@ async function initialize() {
   if (!authStatus.authenticated || authStatus.must_change_password) {
     window.location.assign('/');
     return;
+  }
+  if (!authStatus.enabled) {
+    accountSettingsNotice.textContent = 'Dashboard password protection is not configured, so password changes are unavailable.';
+    accountSettingsNotice.hidden = false;
+    newPasswordInput.disabled = true;
+    confirmPasswordInput.disabled = true;
+    changePasswordSubmit.disabled = true;
   }
   await Promise.all([loadDeviceSettings(), loadTelegramSettings()]);
 }

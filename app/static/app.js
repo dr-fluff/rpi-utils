@@ -39,7 +39,6 @@ let commandDefinitions = new Map();
 let commandsLoaded = Promise.resolve();
 const programRows = new Map();
 let refreshInProgress = false;
-let authEnabled = false;
 let authActive = false;
 let dashboardStarted = false;
 let updateCheckInProgress = false;
@@ -103,15 +102,12 @@ function showDashboard() {
   loginScreen.hidden = true;
   passwordScreen.hidden = true;
   dashboardApp.hidden = false;
-  document.querySelector('#logout-button').hidden = !authEnabled;
-  document.querySelector('#change-password-button').hidden = !authEnabled;
   initializeDashboard();
 }
 
 async function initializeAuth() {
   try {
     const status = await request('/api/auth/status');
-    authEnabled = status.enabled;
     terminalButton.hidden = !status.terminal_available;
     if (status.authenticated && status.must_change_password) {
       showPasswordChange(true);
@@ -166,16 +162,7 @@ passwordForm.addEventListener('submit', async event => {
   }
 });
 
-document.querySelector('#change-password-button').addEventListener('click', () => showPasswordChange(false));
 document.querySelector('#cancel-password-change').addEventListener('click', showDashboard);
-document.querySelector('#logout-button').addEventListener('click', async () => {
-  try {
-    await request('/api/auth/logout', { method: 'POST' });
-    showLogin();
-  } catch (error) {
-    showNotice(error.message);
-  }
-});
 
 function showNotice(message) {
   notice.textContent = message;
@@ -567,18 +554,13 @@ terminalDialog.addEventListener('close', () => {
   terminalInstance = null;
 });
 
-function updateClock() {
-  document.querySelector('#clock').textContent = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date());
-}
 function initializeDashboard() {
   if (dashboardStarted) return;
   dashboardStarted = true;
-  updateClock();
   commandsLoaded = loadCommands();
   commandsLoaded.then(refreshGlobalIp);
   checkForUpdates();
   refresh();
-  dashboardIntervals.push(window.setInterval(updateClock, 1000));
   dashboardIntervals.push(window.setInterval(refresh, 10000));
   dashboardIntervals.push(window.setInterval(checkForUpdates, 5 * 60 * 1000));
 }

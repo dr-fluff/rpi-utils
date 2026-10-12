@@ -34,6 +34,13 @@ const terminalButton = document.querySelector('#terminal-button');
 const terminalDialog = document.querySelector('#terminal-dialog');
 const terminalElement = document.querySelector('#terminal');
 const terminalStatus = document.querySelector('#terminal-status');
+const dockerProjectList = document.querySelector('#docker-project-list');
+const dockerProjectDialog = document.querySelector('#docker-project-dialog');
+const dockerProjectForm = document.querySelector('#docker-project-form');
+const dockerProjectError = document.querySelector('#docker-project-error');
+const dockerImportDialog = document.querySelector('#docker-import-dialog');
+const dockerAvailableList = document.querySelector('#docker-available-list');
+const dockerAvailableError = document.querySelector('#docker-available-error');
 let availableProcesses = [];
 let commandDefinitions = new Map();
 let commandsLoaded = Promise.resolve();
@@ -343,6 +350,272 @@ async function loadCommands() {
 }
 
 document.querySelector('#refresh-button').addEventListener('click', refresh);
+document.querySelector('#add-docker-project-button').addEventListener('click', () => {
+  dockerProjectError.hidden = true;
+  dockerProjectForm.reset();
+  dockerProjectDialog.showModal();
+});
+document.querySelector('#close-docker-project-dialog').addEventListener('click', () => dockerProjectDialog.close());
+document.querySelector('#cancel-docker-project-button').addEventListener('click', () => dockerProjectDialog.close());
+document.querySelector('#import-docker-container-button').addEventListener('click', () => {
+  dockerAvailableError.hidden = true;
+  dockerImportDialog.showModal();
+  void refreshAvailableDockerContainers();
+});
+document.querySelector('#close-docker-import-dialog').addEventListener('click', () => dockerImportDialog.close());
+document.querySelector('#cancel-docker-import-button').addEventListener('click', () => dockerImportDialog.close());
+
+function renderImportedContainers(containers) {
+  const rows = containers.map(container => {
+    const row = document.createElement('article');
+    row.className = 'docker-project';
+    const top = document.createElement('div');
+    top.className = 'docker-project-top';
+    const main = document.createElement('div');
+    main.className = 'program-main';
+    const indicator = document.createElement('span');
+    indicator.className = 'program-indicator';
+    indicator.classList.toggle('running', container.state === 'running');
+    const text = document.createElement('div');
+    const name = document.createElement('div');
+    name.className = 'program-name';
+    name.textContent = container.name;
+    const status = document.createElement('div');
+    status.className = 'program-command';
+    status.textContent = `${container.image || 'Image unavailable'} · ${container.state}${container.status ? ` · ${container.status}` : ''}`;
+    text.append(name, status);
+    main.append(indicator, text);
+    const actions = document.createElement('div');
+    actions.className = 'program-actions';
+    const restart = document.createElement('button');
+    restart.className = 'small-button icon-button';
+    restart.disabled = container.state === 'missing';
+    setIconButton(restart, 'arrows-rotate', 'Restart container');
+    restart.addEventListener('click', async () => {
+      restart.disabled = true;
+      try {
+        await request(`/api/docker/containers/${encodeURIComponent(container.id)}/restart`, { method: 'POST' });
+        showNotice(`Restarted ${container.name}.`);
+        await refreshDockerProjects();
+      } catch (error) {
+        showNotice(error.message);
+      } finally {
+        restart.disabled = container.state === 'missing';
+      }
+    });
+    const remove = document.createElement('button');
+    remove.className = 'small-button icon-button remove-button';
+    setIconButton(remove, 'trash', 'Remove from Pi Console');
+    remove.addEventListener('click', async () => {
+      if (!window.confirm(`Remove "${container.name}" from Pi Console? The container and its data will be left untouched.`)) return;
+      try {
+        const result = await request(`/api/docker/containers/${encodeURIComponent(container.id)}`, { method: 'DELETE' });
+        showNotice(result.message);
+        await refreshDockerProjects();
+      } catch (error) {
+        showNotice(error.message);
+      }
+    });
+    actions.append(restart, remove);
+    top.append(main, actions);
+    const settings = document.createElement('details');
+    settings.className = 'docker-project-settings';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Container settings';
+    const details = document.createElement('pre');
+    details.textContent = JSON.stringify({
+      id: container.id,
+      image: container.image,
+      command: container.command,
+      restart_policy: container.restart_policy,
+      ports: container.ports,
+      mounts: container.mounts,
+      networks: container.networks,
+      started_at: container.started_at,
+    }, null, 2);
+    settings.append(summary, details);
+    row.append(top, settings);
+    return row;
+  });
+  return rows;
+}
+
+function renderDockerProjects(projects, hasImportedContainers) {
+  if (!projects.length && !hasImportedContainers) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    const title = document.createElement('strong');
+    title.textContent = 'No Docker projects enrolled';
+    empty.append(title, document.createTextNode('Add a Compose project to manage its containers here.'));
+    dockerProjectList.replaceChildren(empty);
+    return;
+  }
+  if (!projects.length) {
+    dockerProjectList.replaceChildren();
+    return;
+  }
+  dockerProjectList.replaceChildren(...projects.map(project => {
+    const row = document.createElement('article');
+    row.className = 'docker-project';
+    const top = document.createElement('div');
+    top.className = 'docker-project-top';
+    const main = document.createElement('div');
+    main.className = 'program-main';
+    const indicator = document.createElement('span');
+    indicator.className = 'program-indicator';
+    const title = document.createElement('div');
+    const name = document.createElement('div');
+    name.className = 'program-name';
+    name.textContent = project.name;
+    const status = document.createElement('div');
+    status.className = 'program-command';
+    status.textContent = project.containers.length
+      ? project.containers.map(container => `${container.service || container.name}: ${container.status || container.state || 'unknown'}`).join(' · ')
+      : 'No containers currently running';
+    indicator.classList.toggle('running', project.containers.some(container => container.state === 'running'));
+    title.append(name, status);
+    main.append(indicator, title);
+    const actions = document.createElement('div');
+    actions.className = 'program-actions';
+    const restart = document.createElement('button');
+    restart.className = 'small-button icon-button';
+    setIconButton(restart, 'arrows-rotate', 'Restart project');
+    restart.addEventListener('click', async () => {
+      restart.disabled = true;
+      try {
+        await request(`/api/docker/projects/${encodeURIComponent(project.name)}/restart`, { method: 'POST' });
+        showNotice(`Restarted ${project.name}.`);
+        await refreshDockerProjects();
+      } catch (error) {
+        showNotice(error.message);
+      } finally {
+        restart.disabled = false;
+      }
+    });
+    const remove = document.createElement('button');
+    remove.className = 'small-button icon-button remove-button';
+    setIconButton(remove, 'trash', 'Remove from Pi Console');
+    remove.addEventListener('click', async () => {
+      if (!window.confirm(`Remove "${project.name}" from Pi Console? Its containers and data will be left untouched.`)) return;
+      try {
+        const result = await request(`/api/docker/projects/${encodeURIComponent(project.name)}`, { method: 'DELETE' });
+        showNotice(result.message);
+        await refreshDockerProjects();
+      } catch (error) {
+        showNotice(error.message);
+      }
+    });
+    actions.append(restart, remove);
+    top.append(main, actions);
+    const settings = document.createElement('details');
+    settings.className = 'docker-project-settings';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Compose settings';
+    const yaml = document.createElement('pre');
+    yaml.textContent = project.compose_yaml;
+    settings.append(summary, yaml);
+    row.append(top, settings);
+    return row;
+  }));
+}
+
+async function refreshDockerProjects() {
+  try {
+    const [{ projects }, { containers }] = await Promise.all([
+      request('/api/docker/projects'),
+      request('/api/docker/containers'),
+    ]);
+    renderDockerProjects(projects, containers.length > 0);
+    dockerProjectList.append(...renderImportedContainers(containers));
+  } catch (error) {
+    const unavailable = document.createElement('div');
+    unavailable.className = 'empty-state docker-unavailable';
+    const title = document.createElement('strong');
+    title.textContent = 'Docker status unavailable';
+    unavailable.append(title, document.createTextNode(error.message));
+    dockerProjectList.replaceChildren(unavailable);
+  }
+}
+
+function renderAvailableDockerContainers(containers) {
+  if (!containers.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    const title = document.createElement('strong');
+    title.textContent = 'No containers to import';
+    empty.append(title, document.createTextNode('All running containers are already imported, or Docker has none running.'));
+    dockerAvailableList.replaceChildren(empty);
+    return;
+  }
+  dockerAvailableList.replaceChildren(...containers.map(container => {
+    const row = document.createElement('article');
+    row.className = 'docker-available-item';
+    const info = document.createElement('div');
+    const name = document.createElement('strong');
+    name.textContent = container.name;
+    const details = document.createElement('span');
+    details.textContent = `${container.image} · ${container.status}`;
+    info.append(name, details);
+    const button = document.createElement('button');
+    button.className = 'small-button icon-button';
+    setIconButton(button, 'plus', `Import ${container.name}`);
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      try {
+        await request('/api/docker/containers/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ container_id: container.id }),
+        });
+        showNotice(`Imported ${container.name}.`);
+        await Promise.all([refreshDockerProjects(), refreshAvailableDockerContainers()]);
+      } catch (error) {
+        dockerAvailableError.textContent = error.message;
+        dockerAvailableError.hidden = false;
+        button.disabled = false;
+      }
+    });
+    row.append(info, button);
+    return row;
+  }));
+}
+
+async function refreshAvailableDockerContainers() {
+  dockerAvailableError.hidden = true;
+  dockerAvailableList.replaceChildren();
+  const loading = document.createElement('p');
+  loading.className = 'field-hint';
+  loading.textContent = 'Loading running containers…';
+  dockerAvailableList.append(loading);
+  try {
+    const { containers } = await request('/api/docker/containers/available');
+    renderAvailableDockerContainers(containers);
+  } catch (error) {
+    dockerAvailableList.replaceChildren();
+    dockerAvailableError.textContent = error.message;
+    dockerAvailableError.hidden = false;
+  }
+}
+
+dockerProjectForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  dockerProjectError.hidden = true;
+  const values = Object.fromEntries(new FormData(dockerProjectForm));
+  try {
+    await request('/api/docker/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: values.name, compose_yaml: values.compose_yaml }),
+    });
+    dockerProjectDialog.close();
+    showNotice(`Created and started ${values.name}.`);
+    await refreshDockerProjects();
+  } catch (error) {
+    dockerProjectError.textContent = error.message;
+    dockerProjectError.hidden = false;
+  }
+});
+
 async function checkForUpdates() {
   if (updateCheckInProgress) return;
   updateCheckInProgress = true;
@@ -561,7 +834,9 @@ function initializeDashboard() {
   commandsLoaded.then(refreshGlobalIp);
   checkForUpdates();
   refresh();
+  refreshDockerProjects();
   dashboardIntervals.push(window.setInterval(refresh, 10000));
+  dashboardIntervals.push(window.setInterval(refreshDockerProjects, 10000));
   dashboardIntervals.push(window.setInterval(checkForUpdates, 5 * 60 * 1000));
 }
 initializeAuth();

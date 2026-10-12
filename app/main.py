@@ -40,6 +40,13 @@ from app.custom_commands import (
     CustomCommandStore,
     UserSettingsStore,
 )
+from app.docker_projects import (
+    MAX_COMPOSE_BYTES,
+    DockerConfigurationError,
+    DockerError,
+    DockerProjectManager,
+    DockerUnavailableError,
+)
 from app.programs import ProgramManager
 from app.terminal import terminal_socket
 from app.telegram.bot import telegram_polling
@@ -49,6 +56,7 @@ ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "app" / "static"
 GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/dr-fluff/rpi-utils/releases/latest"
 manager = ProgramManager()
+docker_projects = DockerProjectManager()
 user_settings = UserSettingsStore()
 custom_commands = CustomCommandStore(user_settings)
 telegram_settings = TelegramSettingsStore()
@@ -82,6 +90,15 @@ class RunningProgramInput(BaseModel):
 class ProgramEditInput(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     url: str | None = Field(default=None, max_length=2048)
+
+
+class DockerProjectInput(BaseModel):
+    name: str = Field(min_length=1, max_length=63)
+    compose_yaml: str = Field(min_length=1, max_length=MAX_COMPOSE_BYTES)
+
+
+class DockerContainerInput(BaseModel):
+    container_id: str = Field(min_length=12, max_length=64, pattern=r"^[a-fA-F0-9]+$")
 
 
 class CommandInput(BaseModel):
@@ -548,6 +565,140 @@ async def running_processes() -> dict:
         return {"processes": manager.list_running_processes()}
     except OSError as error:
         raise HTTPException(status_code=500, detail=f"Could not inspect running processes: {error}") from error
+
+
+@app.get("/api/docker/projects")
+async def list_docker_projects() -> dict:
+    try:
+        projects = await asyncio.to_thread(docker_projects.list_projects)
+    except DockerUnavailableError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except DockerError as error:
+        raise HTTPException(status_code=502, detail=f"Could not read Docker projects: {error}") from error
+    return {"projects": projects}
+
+
+@app.get("/api/docker/containers/available")
+async def available_docker_containers() -> dict:
+    try:
+        containers = await asyncio.to_thread(docker_projects.available_containers)
+    except DockerUnavailableError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except DockerError as error:
+        raise HTTPException(status_code=502, detail=f"Could not list running Docker containers: {error}") from error
+    return {"containers": containers}
+
+
+@app.get("/api/docker/containers")
+async def list_imported_docker_containers() -> dict:
+    try:
+        containers = await asyncio.to_thread(docker_projects.list_imported_containers)
+    except DockerUnavailableError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except DockerError as error:
+        raise HTTPException(status_code=502, detail=f"Could not read imported Docker containers: {error}") from error
+    return {"containers": containers}
+
+
+@app.post("/api/docker/containers/import", status_code=201)
+async def import_docker_container(container: DockerContainerInput) -> dict:
+    try:
+        imported = await asyncio.to_thread(
+            docker_projects.import_container,
+            container.container_id,
+        )
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except DockerUnavailableError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except DockerError as error:
+        raise HTTPException(status_code=502, detail=f"Could not import Docker container: {error}") from error
+    except OSError as error:
+        raise HTTPException(status_code=500, detail=f"Could not save imported Docker container: {error}") from error
+    return imported
+
+
+@app.post("/api/docker/containers/{container_id}/restart")
+async def restart_imported_docker_container(container_id: str) -> dict:
+    try:
+        restarted = await asyncio.to_thread(
+            docker_projects.restart_imported_container,
+            container_id,
+        )
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except DockerUnavailableError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except DockerError as error:
+        raise HTTPException(status_code=502, detail=f"Could not restart Docker container: {error}") from error
+    return restarted
+
+
+@app.delete("/api/docker/containers/{container_id}")
+async def remove_imported_docker_container(container_id: str) -> dict:
+    try:
+        await asyncio.to_thread(
+            docker_projects.remove_imported_container,
+            container_id,
+        )
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except DockerError as error:
+        raise HTTPException(status_code=500, detail=f"Could not remove imported Docker container: {error}") from error
+    return {"message": "Removed container from Pi Console. The container and its data were left untouched."}
+
+
+@app.post("/api/docker/projects", status_code=201)
+async def add_docker_project(project: DockerProjectInput) -> dict:
+    try:
+        created = await asyncio.to_thread(
+            docker_projects.add_project,
+            project.name,
+            project.compose_yaml,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except DockerConfigurationError as error:
+        raise HTTPException(status_code=400, detail=f"Invalid Docker Compose configuration: {error}") from error
+    except DockerUnavailableError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except DockerError as error:
+        raise HTTPException(status_code=502, detail=f"Could not start Docker project: {error}") from error
+    except OSError as error:
+        raise HTTPException(status_code=500, detail=f"Could not save Docker project: {error}") from error
+    return created
+
+
+@app.post("/api/docker/projects/{project_name}/restart")
+async def restart_docker_project(project_name: str) -> dict:
+    try:
+        restarted = await asyncio.to_thread(docker_projects.restart_project, project_name)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except DockerUnavailableError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except DockerError as error:
+        raise HTTPException(status_code=502, detail=f"Could not restart Docker project: {error}") from error
+    return restarted
+
+
+@app.delete("/api/docker/projects/{project_name}")
+async def remove_docker_project(project_name: str) -> dict:
+    try:
+        await asyncio.to_thread(docker_projects.remove_project, project_name)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except OSError as error:
+        raise HTTPException(status_code=500, detail=f"Could not remove Docker project entry: {error}") from error
+    return {"message": f"Removed {project_name} from Pi Console. Its containers and data were left untouched."}
 
 
 @app.post("/api/programs", status_code=201)

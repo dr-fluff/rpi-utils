@@ -54,7 +54,7 @@ from app.telegram.settings import TelegramSettingsStore
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "app" / "static"
-GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/dr-fluff/rpi-utils/releases/latest"
+GITHUB_RELEASES_URL = "https://api.github.com/repos/dr-fluff/rpi-utils/releases?per_page=100"
 manager = ProgramManager()
 docker_projects = DockerProjectManager()
 user_settings = UserSettingsStore()
@@ -357,10 +357,6 @@ async def status() -> dict:
 async def update_check() -> dict:
     try:
         return await asyncio.to_thread(check_for_update)
-    except HTTPException as error:
-        if error.status_code == 404:
-            return {"update_available": False, "latest_version": None}
-        raise
     except (OSError, subprocess.TimeoutExpired) as error:
         raise HTTPException(status_code=502, detail=f"Could not check for updates: {error}") from error
 
@@ -762,7 +758,7 @@ async def global_ip() -> dict:
 
 def get_latest_release_tag() -> str:
     request = URLRequest(
-        GITHUB_LATEST_RELEASE_URL,
+        GITHUB_RELEASES_URL,
         headers={"Accept": "application/vnd.github+json", "User-Agent": "rpi-utils"},
     )
     try:
@@ -780,9 +776,19 @@ def get_latest_release_tag() -> str:
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise HTTPException(status_code=502, detail="GitHub returned invalid release data") from error
 
-    if not isinstance(release, dict):
+    if not isinstance(release, list):
         raise HTTPException(status_code=502, detail="GitHub returned invalid release data")
-    tag = release.get("tag_name")
+    published_releases = [
+        item for item in release
+        if isinstance(item, dict) and not item.get("draft", False)
+    ]
+    if not published_releases:
+        raise HTTPException(status_code=404, detail="No published GitHub release is available")
+    published_releases.sort(
+        key=lambda item: item.get("published_at") or item.get("created_at") or "",
+        reverse=True,
+    )
+    tag = published_releases[0].get("tag_name")
     if not isinstance(tag, str) or not tag:
         raise HTTPException(status_code=502, detail="GitHub release does not contain a tag")
     return tag

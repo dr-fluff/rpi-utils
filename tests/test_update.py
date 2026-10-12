@@ -2,11 +2,9 @@ import asyncio
 import os
 import tempfile
 import unittest
-from email.message import Message
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
-from urllib.error import HTTPError
 
 from fastapi import HTTPException
 
@@ -139,19 +137,26 @@ class UpdateTests(unittest.TestCase):
     def test_get_latest_release_tag_reads_published_tag(self):
         response = MagicMock()
         response.__enter__.return_value = response
-        response.read.return_value = b'{"tag_name":"v1.0.0"}'
+        response.read.return_value = (
+            b'[{"tag_name":"v1.1.0-rc1","draft":false,"prerelease":true,'
+            b'"published_at":"2026-10-12T10:00:00Z"},'
+            b'{"tag_name":"v1.0.0","draft":false,"prerelease":false,'
+            b'"published_at":"2026-10-01T10:00:00Z"}]'
+        )
         with patch("app.main.urlopen", return_value=response) as open_url:
             tag = get_latest_release_tag()
 
-        self.assertEqual(tag, "v1.0.0")
+        self.assertEqual(tag, "v1.1.0-rc1")
         self.assertEqual(
             open_url.call_args.args[0].full_url,
-            "https://api.github.com/repos/dr-fluff/rpi-utils/releases/latest",
+            "https://api.github.com/repos/dr-fluff/rpi-utils/releases?per_page=100",
         )
 
     def test_get_latest_release_tag_reports_when_no_release_exists(self):
-        error = HTTPError("https://api.github.com", 404, "Not Found", Message(), None)
-        with patch("app.main.urlopen", side_effect=error):
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = b"[]"
+        with patch("app.main.urlopen", return_value=response):
             with self.assertRaises(HTTPException) as raised:
                 get_latest_release_tag()
 
@@ -203,14 +208,16 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(status["update_available"], True)
         self.assertEqual(status["latest_version"], "v1.1.0")
 
-    def test_update_check_hides_banner_when_no_release_exists(self):
+    def test_update_check_reports_no_release_so_dashboard_can_show_status(self):
         with patch(
             "app.main.check_for_update",
             side_effect=HTTPException(status_code=404, detail="No published GitHub release is available"),
         ):
-            status = asyncio.run(update_check())
+            with self.assertRaises(HTTPException) as raised:
+                asyncio.run(update_check())
 
-        self.assertEqual(status, {"update_available": False, "latest_version": None})
+        self.assertEqual(raised.exception.status_code, 404)
+        self.assertEqual(raised.exception.detail, "No published GitHub release is available")
 
 
 if __name__ == "__main__":

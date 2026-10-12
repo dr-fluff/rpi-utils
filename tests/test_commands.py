@@ -1,9 +1,11 @@
 import os
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from app.commands import COMMANDS, CommandError, help_message, run_command
+from app.custom_commands import CustomCommandStore
 from app.programs import ProgramManager
 
 
@@ -13,11 +15,15 @@ class CommandRegistryTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.temporary_directory.cleanup)
         self.environment = patch.dict(
             os.environ,
-            {"RPI_UTILS_PROGRAMS_FILE": f"{self.temporary_directory.name}/programs.json"},
+            {
+                "RPI_UTILS_PROGRAMS_FILE": f"{self.temporary_directory.name}/programs.json",
+                "RPI_UTILS_SETTINGS_FILE": f"{self.temporary_directory.name}/settings.json",
+            },
         )
         self.environment.start()
         self.addCleanup(self.environment.stop)
         self.manager = ProgramManager()
+        self.custom_commands = CustomCommandStore()
 
     async def test_help_lists_every_registered_telegram_command(self):
         message = help_message()
@@ -51,6 +57,73 @@ class CommandRegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["global_ip"], "203.0.113.5")
         self.assertEqual(result["local_ip"], "192.168.0.10")
         self.assertIn("Local IP: 192.168.0.10", result["message"])
+
+    async def test_custom_command_runs_as_direct_argv_and_returns_output(self):
+        self.custom_commands.add(
+            "say_hi",
+            "Print a greeting",
+            f"{sys.executable} -c 'print(\"hello from script\")'",
+            None,
+            "",
+            False,
+            False,
+            10,
+            set(),
+        )
+
+        result = await run_command("say_hi", self.manager, custom_commands=self.custom_commands)
+
+        self.assertEqual(result["message"], "hello from script")
+
+    async def test_custom_command_is_available_to_telegram_only_when_enabled(self):
+        self.custom_commands.add(
+            "dashboard_only",
+            "Dashboard-only command",
+            "true",
+            None,
+            "",
+            False,
+            False,
+            10,
+            set(),
+        )
+        with self.assertRaisesRegex(CommandError, "not enabled for Telegram"):
+            await run_command(
+                "dashboard_only",
+                self.manager,
+                custom_commands=self.custom_commands,
+                source="telegram",
+            )
+
+    async def test_confirmation_required_custom_command_cannot_run_from_telegram(self):
+        self.custom_commands.add(
+            "confirm_me",
+            "Needs confirmation",
+            "true",
+            None,
+            "",
+            True,
+            True,
+            10,
+            set(),
+        )
+
+        with self.assertRaisesRegex(CommandError, "requires confirmation"):
+            await run_command(
+                "confirm_me",
+                self.manager,
+                custom_commands=self.custom_commands,
+                source="telegram",
+            )
+
+    async def test_help_lists_only_telegram_enabled_custom_commands(self):
+        self.custom_commands.add("home_only", "Dashboard only", "true", None, "", False, False, 10, set())
+        self.custom_commands.add("router", "Restart router", "true", None, "", True, False, 10, set())
+
+        message = help_message(self.custom_commands)
+
+        self.assertIn("/router", message)
+        self.assertNotIn("/home_only", message)
 
 
 if __name__ == "__main__":

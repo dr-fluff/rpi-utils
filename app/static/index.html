@@ -6,10 +6,10 @@
   <meta name="theme-color" content="#f3f4ee">
   <title>Pi Console</title>
   <link rel="stylesheet" href="/static/vendor/xterm.css">
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css?v=7">
   <script src="/static/vendor/xterm.js" defer></script>
   <script src="/static/vendor/addon-fit.js" defer></script>
-  <script src="/static/app.js" defer></script>
+  <script src="/static/app.js?v=8" defer></script>
 </head>
 <body>
   <section id="login-screen" class="login-screen" hidden>
@@ -20,7 +20,7 @@
       <label for="login-password">Dashboard password</label>
       <input id="login-password" name="password" type="password" autocomplete="current-password" required>
       <p id="login-error" class="login-error" role="alert" hidden></p>
-      <button class="button button-dark" type="submit">Sign in</button>
+      <button class="button button-dark icon-button" type="submit" title="Sign in" aria-label="Sign in"><span class="fa-icon fa-right-to-bracket" aria-hidden="true"></span></button>
     </form>
   </section>
   <section id="password-screen" class="login-screen" hidden>
@@ -34,18 +34,18 @@
       <label for="confirm-password">Confirm new password</label>
       <input id="confirm-password" name="confirm-password" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required>
       <p id="password-error" class="login-error" role="alert" hidden></p>
-      <div class="dialog-actions"><button id="cancel-password-change" class="button button-quiet" type="button">Cancel</button><button class="button button-dark" type="submit">Save password</button></div>
+      <div class="dialog-actions"><button id="cancel-password-change" class="button button-quiet icon-button" type="button" title="Cancel" aria-label="Cancel"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button><button class="button button-dark icon-button" type="submit" title="Save password" aria-label="Save password"><span class="fa-icon fa-floppy-disk" aria-hidden="true"></span></button></div>
     </form>
   </section>
   <div id="dashboard-app" hidden>
   <header class="topbar">
     <a class="brand" href="/" aria-label="Pi Console home"><span class="brand-mark">π</span><span>PI<span class="brand-light">CONSOLE</span></span></a>
-    <div class="topbar-actions"><div class="local-status"><span class="status-dot"></span> LOCAL DEVICE <span class="divider">/</span> <span id="clock">--:--:--</span></div><button id="change-password-button" class="text-action">Change password</button><button id="logout-button" class="text-action">Sign out</button></div>
+    <div class="topbar-actions"><div class="local-status"><span class="status-dot"></span> LOCAL DEVICE <span class="divider">/</span> <span id="clock">--:--:--</span></div><a class="button button-quiet icon-button" href="/commands" title="Commands" aria-label="Commands"><span class="fa-icon fa-terminal" aria-hidden="true"></span></a><a class="button button-quiet icon-button" href="/settings" title="Settings" aria-label="Settings"><span class="fa-icon fa-gear" aria-hidden="true"></span></a><button id="change-password-button" class="text-action icon-button" title="Change password" aria-label="Change password"><span class="fa-icon fa-key" aria-hidden="true"></span></button><button id="logout-button" class="text-action icon-button" title="Sign out" aria-label="Sign out"><span class="fa-icon fa-right-from-bracket" aria-hidden="true"></span></button></div>
   </header>
 
   <section id="update-banner" class="update-banner" role="status" aria-live="polite" hidden>
     <p id="update-banner-message"></p>
-    <button id="update-banner-action" class="button button-dark" type="button">Update now</button>
+    <button id="update-banner-action" class="button button-dark icon-button" type="button" title="Update now" aria-label="Update now"><span class="fa-icon fa-download" aria-hidden="true"></span></button>
   </section>
 
   <main>
@@ -55,28 +55,23 @@
         <h1>Device<br><span>overview.</span></h1>
       </div>
       <div class="masthead-actions">
-        <button class="button button-quiet" id="terminal-button" type="button" hidden>Terminal</button>
-        <button class="button button-quiet" id="refresh-button" title="Refresh status"><span aria-hidden="true">↻</span> Refresh</button>
+        <button class="button button-quiet icon-button" id="terminal-button" type="button" title="Terminal" aria-label="Terminal" hidden><span class="fa-icon fa-terminal" aria-hidden="true"></span></button>
+        <button class="button button-quiet icon-button" id="refresh-button" type="button" title="Refresh status" aria-label="Refresh status"><span class="fa-icon fa-arrows-rotate" aria-hidden="true"></span></button>
       </div>
     </section>
 
     <section class="overview" aria-label="Device overview">
       <div class="overview-item"><span class="metric-label">PROGRAMS</span><strong id="program-count">0</strong><span class="metric-note">registered</span></div>
       <div class="overview-item"><span class="metric-label">ACTIVE</span><strong id="active-count">0</strong><span class="metric-note">running now</span></div>
-      <div class="overview-item ip-item"><span class="metric-label">GLOBAL IP</span><strong id="global-ip">Checking…</strong><button id="ip-button" class="text-action">Force refresh <span aria-hidden="true">↗</span></button></div>
-    </section>
-
-    <section class="command-section" aria-label="Device commands">
-      <div class="section-heading"><div><p class="eyebrow">SHARED WITH TELEGRAM</p><h2>Device commands</h2></div></div>
-      <div id="command-list" class="command-list" aria-live="polite"></div>
+      <div class="overview-item ip-item"><span class="metric-label">GLOBAL IP</span><strong id="global-ip">Checking…</strong><button id="ip-button" class="text-action icon-button" title="Force refresh global IP" aria-label="Force refresh global IP"><span class="fa-icon fa-arrows-rotate" aria-hidden="true"></span></button></div>
     </section>
 
     <section class="program-section">
       <div class="section-heading">
         <div><p class="eyebrow">PROCESS MANAGEMENT</p><h2>Your programs</h2></div>
         <div class="masthead-actions">
-          <button class="button button-quiet" id="add-running-button">Add running program</button>
-          <button class="button button-accent" id="add-button"><span aria-hidden="true">＋</span> Add program</button>
+          <button class="button button-quiet icon-button" id="add-running-button" title="Add running program" aria-label="Add running program"><span class="fa-icon fa-list-check" aria-hidden="true"></span></button>
+          <button class="button button-accent icon-button" id="add-button" title="Add program" aria-label="Add program"><span class="fa-icon fa-plus" aria-hidden="true"></span></button>
         </div>
       </div>
       <div id="program-list" class="program-list" aria-live="polite"></div>
@@ -88,19 +83,29 @@
 
   <dialog id="program-dialog">
     <form id="program-form">
-      <div class="dialog-heading"><div><p class="eyebrow">NEW PROCESS</p><h2>Add a program</h2></div><button type="button" class="close-button" id="close-dialog" aria-label="Close">×</button></div>
+      <div class="dialog-heading"><div><p class="eyebrow">NEW PROCESS</p><h2>Add a program</h2></div><button type="button" class="close-button icon-button" id="close-dialog" title="Close" aria-label="Close"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button></div>
       <label>Display name<input name="name" required maxlength="80" placeholder="Nightly backup"></label>
       <label>Command<input name="command" required maxlength="1000" placeholder="/usr/bin/python3 /home/pi/backup.py"></label>
       <p class="field-hint">Enter the executable and arguments. Commands run directly without a shell.</p>
       <label>Working directory <span class="optional">OPTIONAL</span><input name="cwd" placeholder="/home/pi/project"></label>
       <label>Web address <span class="optional">OPTIONAL</span><input name="url" type="url" maxlength="2048" placeholder="http://192.168.0.10:3000"></label>
-      <div class="dialog-actions"><button type="button" class="button button-quiet" id="cancel-button">Cancel</button><button class="button button-dark" type="submit">Save program</button></div>
+      <div class="dialog-actions"><button type="button" class="button button-quiet icon-button" id="cancel-button" title="Cancel" aria-label="Cancel"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button><button class="button button-dark icon-button" type="submit" title="Save program" aria-label="Save program"><span class="fa-icon fa-floppy-disk" aria-hidden="true"></span></button></div>
+    </form>
+  </dialog>
+
+  <dialog id="edit-program-dialog">
+    <form id="edit-program-form">
+      <div class="dialog-heading"><div><p class="eyebrow">PROGRAM SETTINGS</p><h2>Edit program</h2></div><button type="button" class="close-button icon-button" id="close-edit-dialog" title="Close" aria-label="Close"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button></div>
+      <label>Display name<input id="edit-program-name" name="name" required maxlength="80"></label>
+      <label>Web address <span class="optional">OPTIONAL</span><input id="edit-program-url" name="url" type="url" maxlength="2048" placeholder="https://service.example"></label>
+      <p id="edit-program-error" class="login-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button id="edit-remove-button" type="button" class="button button-quiet icon-button remove-program-action" title="Remove program" aria-label="Remove program"><span class="fa-icon fa-trash" aria-hidden="true"></span></button><button type="button" class="button button-quiet icon-button" id="cancel-edit-button" title="Cancel" aria-label="Cancel"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button><button class="button button-dark icon-button" type="submit" title="Save changes" aria-label="Save changes"><span class="fa-icon fa-floppy-disk" aria-hidden="true"></span></button></div>
     </form>
   </dialog>
 
   <dialog id="running-dialog">
     <form id="running-form">
-      <div class="dialog-heading"><div><p class="eyebrow">RUNNING PROCESS</p><h2>Add an existing process</h2></div><button type="button" class="close-button" id="close-running-dialog" aria-label="Close">×</button></div>
+      <div class="dialog-heading"><div><p class="eyebrow">RUNNING PROCESS</p><h2>Add an existing process</h2></div><button type="button" class="close-button icon-button" id="close-running-dialog" title="Close" aria-label="Close"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button></div>
       <label>Search processes<input id="running-process-search" type="search" placeholder="Search command, path, or PID"></label>
       <input name="pid" id="running-process-pid" type="hidden" required>
       <div id="running-process-list" class="process-picker" role="listbox" aria-label="Running processes"></div>
@@ -108,11 +113,11 @@
       <label>Display name<input name="name" id="running-process-name" required maxlength="80" placeholder="WireGuard"></label>
       <label>Web address <span class="optional">OPTIONAL</span><input name="url" type="url" maxlength="2048" placeholder="http://192.168.0.10:3000"></label>
       <p class="field-hint">The process will be saved in your program list without starting a duplicate. Entries are saved outside the app checkout and remain through app updates.</p>
-      <div class="dialog-actions"><button type="button" class="button button-quiet" id="cancel-running-button">Cancel</button><button class="button button-dark" type="submit">Add running process</button></div>
+      <div class="dialog-actions"><button type="button" class="button button-quiet icon-button" id="cancel-running-button" title="Cancel" aria-label="Cancel"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button><button class="button button-dark icon-button" type="submit" title="Add running process" aria-label="Add running process"><span class="fa-icon fa-plus" aria-hidden="true"></span></button></div>
     </form>
   </dialog>
   <dialog id="terminal-dialog" class="terminal-dialog">
-    <div class="terminal-heading"><strong>Pi Console terminal</strong><span id="terminal-status">Connecting…</span><button id="close-terminal" class="button button-quiet" type="button">Close</button></div>
+    <div class="terminal-heading"><strong>Pi Console terminal</strong><span id="terminal-status">Connecting…</span><button id="close-terminal" class="button button-quiet icon-button" type="button" title="Close terminal" aria-label="Close terminal"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button></div>
     <div id="terminal"></div>
   </dialog>
   </div>

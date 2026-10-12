@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f3f4ee">
+  <title>Commands · Pi Console</title>
+  <link rel="stylesheet" href="/static/styles.css?v=7">
+  <script src="/static/commands.js?v=6" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Pi Console home"><span class="brand-mark">π</span><span>PI<span class="brand-light">CONSOLE</span></span></a>
+    <div class="topbar-actions"><span class="local-status"><span class="status-dot"></span> DEVICE COMMANDS</span><a class="button button-quiet icon-button" href="/settings" title="Settings" aria-label="Settings"><span class="fa-icon fa-gear" aria-hidden="true"></span></a><a class="button button-quiet icon-button" href="/" title="Dashboard" aria-label="Dashboard"><span class="fa-icon fa-house" aria-hidden="true"></span></a></div>
+  </header>
+  <main class="commands-page">
+    <section class="masthead">
+      <div><p class="eyebrow">CONTROL SURFACE / COMMAND LIBRARY</p><h1>Device<br><span>commands.</span></h1></div>
+    </section>
+    <p class="commands-intro">Run built-in actions or configure your own scripts. Choose which custom commands are also available to authorized Telegram users.</p>
+    <section class="commands-group" aria-labelledby="custom-commands-heading">
+      <div class="section-heading"><div><p class="eyebrow">YOUR SCRIPTS</p><h2 id="custom-commands-heading">Custom commands</h2></div><button id="add-command-button" class="button button-accent icon-button" type="button" title="Add command" aria-label="Add command"><span class="fa-icon fa-plus" aria-hidden="true"></span></button></div>
+      <div id="custom-command-list" class="managed-command-list" aria-live="polite"></div>
+    </section>
+    <section class="commands-group" aria-labelledby="scripts-heading">
+      <div class="section-heading"><div><p class="eyebrow">PRIVATE FILES / OUTSIDE GIT</p><h2 id="scripts-heading">Scripts</h2></div><button id="add-script-button" class="button button-accent icon-button" type="button" title="Add script" aria-label="Add script"><span class="fa-icon fa-plus" aria-hidden="true"></span></button></div>
+      <p id="scripts-directory-label" class="settings-path"></p>
+      <div id="script-list" class="managed-command-list" aria-live="polite"></div>
+    </section>
+    <section class="commands-group" aria-labelledby="builtin-commands-heading">
+      <div class="section-heading"><div><p class="eyebrow">INCLUDED</p><h2 id="builtin-commands-heading">Built-in commands</h2></div></div>
+      <div id="builtin-command-list" class="managed-command-list" aria-live="polite"></div>
+    </section>
+    <p id="commands-notice" class="notice" role="status"></p>
+    <footer><span>PI CONSOLE <span class="footer-separator">·</span> PRIVATE BY DESIGN</span><span>AUTHORIZED ACCESS ONLY</span></footer>
+  </main>
+
+  <dialog id="command-dialog">
+    <form id="command-form">
+      <div class="dialog-heading"><div><p class="eyebrow">CUSTOM SCRIPT</p><h2 id="command-dialog-title">Add a command</h2></div><button id="close-command-dialog" type="button" class="close-button icon-button" title="Close" aria-label="Close"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button></div>
+      <label>Command name<input name="name" required maxlength="32" pattern="[a-z][a-z0-9_]*" placeholder="restart_router"></label>
+      <p class="field-hint">Use lowercase letters, numbers, and underscores. In Telegram, this will be <code>/restart_router</code>.</p>
+      <label>Description<input name="description" required maxlength="120" placeholder="Restart the router"></label>
+      <label>Command icon <span id="selected-command-icon-label" class="selected-command-icon-label">Bolt</span></label>
+      <div class="command-icon-picker">
+        <input id="command-icon" name="icon" type="hidden" value="bolt">
+        <label class="icon-search-label" for="command-icon-search">Search Font Awesome icons</label>
+        <input id="command-icon-search" type="search" autocomplete="off" placeholder="Search icons">
+        <div id="command-icon-grid" class="command-icon-grid" role="group" aria-label="Choose a command icon"></div>
+      </div>
+      <label>Script<select id="command-script" name="script_name"><option value="">Use a direct executable instead</option></select></label>
+      <label id="command-line-label">Program and arguments<input id="command-line" name="command" maxlength="1000" placeholder="/usr/bin/example --option"></label>
+      <label id="script-arguments-label" hidden>Script arguments<input name="arguments" maxlength="1000" placeholder="optional arguments"></label>
+      <p class="field-hint">Scripts run directly from your private scripts directory as the dashboard service user. Script files must be executable text files with a shebang.</p>
+      <label>Timeout in seconds<input name="timeout_seconds" type="number" min="1" max="300" value="60" required></label>
+      <label class="check-option"><input name="telegram_enabled" type="checkbox"> Also enable this command in Telegram</label>
+      <label class="check-option"><input name="requires_confirmation" type="checkbox"> Ask for confirmation before running in the dashboard</label>
+      <p class="field-hint">Telegram cannot show a confirmation prompt; commands marked for confirmation are only runnable from the dashboard.</p>
+      <p id="command-form-error" class="login-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button id="delete-command-button" type="button" class="button button-quiet icon-button remove-program-action" title="Delete command" aria-label="Delete command" hidden><span class="fa-icon fa-trash" aria-hidden="true"></span></button><button id="cancel-command-button" type="button" class="button button-quiet icon-button" title="Cancel" aria-label="Cancel"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button><button class="button button-dark icon-button" type="submit" title="Save command" aria-label="Save command"><span class="fa-icon fa-floppy-disk" aria-hidden="true"></span></button></div>
+    </form>
+  </dialog>
+  <dialog id="script-dialog" class="script-dialog">
+    <form id="script-form">
+      <div class="dialog-heading"><div><p class="eyebrow">PRIVATE SCRIPT FILE</p><h2 id="script-dialog-title">Add a script</h2></div><button id="close-script-dialog" type="button" class="close-button icon-button" title="Close" aria-label="Close"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button></div>
+      <label>File name<input name="name" required maxlength="68" pattern="[A-Za-z0-9][A-Za-z0-9_.\-]*\.(sh|bash|py)" placeholder="restart-router.sh"></label>
+      <label>Script contents<textarea name="content" required maxlength="65536" spellcheck="false" wrap="off"></textarea></label>
+      <p id="script-form-error" class="login-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button id="delete-script-button" type="button" class="button button-quiet icon-button remove-program-action" title="Delete script" aria-label="Delete script" hidden><span class="fa-icon fa-trash" aria-hidden="true"></span></button><button id="cancel-script-button" type="button" class="button button-quiet icon-button" title="Cancel" aria-label="Cancel"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button><button class="button button-dark icon-button" type="submit" title="Save script" aria-label="Save script"><span class="fa-icon fa-floppy-disk" aria-hidden="true"></span></button></div>
+    </form>
+  </dialog>
+</body>
+</html>

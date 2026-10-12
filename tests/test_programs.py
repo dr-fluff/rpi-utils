@@ -60,6 +60,61 @@ class ProgramManagerTests(unittest.TestCase):
         with self.assertRaisesRegex(KeyError, "Program not found"):
             self.manager.remove_program("unknown")
 
+    def test_update_program_changes_name_and_url_without_changing_identity_or_command(self):
+        working_directory = self.temporary_directory.name
+        self.manager.add_program("Worker", "python -V", working_directory, "http://localhost:8000")
+
+        updated = self.manager.update_program("worker", "Background worker", "https://worker.home")
+
+        self.assertEqual(updated["id"], "worker")
+        self.assertEqual(updated["name"], "Background worker")
+        self.assertEqual(updated["url"], "https://worker.home")
+        self.assertEqual(updated["command"], ["python", "-V"])
+        self.assertEqual(updated["cwd"], str(Path(working_directory).resolve()))
+
+    def test_update_program_preserves_attached_process_tracking(self):
+        self.manager.add_program("Worker", "python -V", None)
+        programs = self.manager._load()
+        programs[0]["attached_pid"] = 4321
+        programs[0]["attached_start_time"] = 987654
+        self.manager._save(programs)
+        process = {"pid": 4321, "start_time": 987654}
+
+        with patch("app.programs._process_info", return_value=process):
+            updated = self.manager.update_program("worker", "Background worker", None)
+
+        self.assertTrue(updated["running"])
+        self.assertEqual(updated["pid"], 4321)
+        saved = self.manager._load()[0]
+        self.assertEqual(saved["attached_pid"], 4321)
+        self.assertEqual(saved["attached_start_time"], 987654)
+
+    def test_update_program_can_clear_url(self):
+        self.manager.add_program("Worker", "python -V", None, "http://localhost:8000")
+
+        updated = self.manager.update_program("worker", "Worker", "")
+
+        self.assertIsNone(updated["url"])
+
+    def test_update_program_rejects_invalid_url_and_keeps_saved_program(self):
+        self.manager.add_program("Worker", "python -V", None)
+
+        with self.assertRaisesRegex(ValueError, "valid http:// or https:// URL"):
+            self.manager.update_program("worker", "Worker", "javascript:alert(1)")
+
+        self.assertIsNone(self.manager.list_programs()[0]["url"])
+
+    def test_update_program_rejects_another_programs_name(self):
+        self.manager.add_program("Worker", "python -V", None)
+        self.manager.add_program("Backup", "backup-tool", None)
+
+        with self.assertRaisesRegex(ValueError, "already exists"):
+            self.manager.update_program("worker", "Backup", None)
+
+    def test_update_program_rejects_unknown_id(self):
+        with self.assertRaisesRegex(KeyError, "Program not found"):
+            self.manager.update_program("unknown", "Worker", None)
+
     def test_program_saves_optional_http_service_url(self):
         program = self.manager.add_program(
             "AdGuard",

@@ -2,6 +2,12 @@ const list = document.querySelector('#program-list');
 const notice = document.querySelector('#notice');
 const dialog = document.querySelector('#program-dialog');
 const form = document.querySelector('#program-form');
+const editDialog = document.querySelector('#edit-program-dialog');
+const editForm = document.querySelector('#edit-program-form');
+const editProgramName = document.querySelector('#edit-program-name');
+const editProgramUrl = document.querySelector('#edit-program-url');
+const editProgramError = document.querySelector('#edit-program-error');
+const editRemoveButton = document.querySelector('#edit-remove-button');
 const runningDialog = document.querySelector('#running-dialog');
 const runningForm = document.querySelector('#running-form');
 const runningProcessName = document.querySelector('#running-process-name');
@@ -9,7 +15,6 @@ const runningProcessSearch = document.querySelector('#running-process-search');
 const runningProcessPid = document.querySelector('#running-process-pid');
 const runningProcessList = document.querySelector('#running-process-list');
 const runningProcessEmpty = document.querySelector('#running-process-empty');
-const commandList = document.querySelector('#command-list');
 const updateBanner = document.querySelector('#update-banner');
 const updateBannerMessage = document.querySelector('#update-banner-message');
 const updateBannerAction = document.querySelector('#update-banner-action');
@@ -34,26 +39,26 @@ let commandDefinitions = new Map();
 let commandsLoaded = Promise.resolve();
 const programRows = new Map();
 let refreshInProgress = false;
-let updateCheckInProgress = false;
 let authEnabled = false;
 let authActive = false;
 let dashboardStarted = false;
+let updateCheckInProgress = false;
 let dashboardIntervals = [];
 let terminalInstance;
 let terminalSocket;
 
+function setIconButton(button, icon, label) {
+  button.classList.add('icon-button');
+  button.title = label;
+  button.setAttribute('aria-label', label);
+  const iconElement = document.createElement('span');
+  iconElement.className = `fa-icon fa-${icon}`;
+  iconElement.setAttribute('aria-hidden', 'true');
+  button.replaceChildren(iconElement);
+}
+
 async function request(url, options) {
-  let response;
-  try {
-    response = await fetch(url, options);
-  } catch (error) {
-    if (error instanceof TypeError) {
-      throw new Error(
-        'Could not reach Pi Console. Use its Caddy HTTPS address or an SSH tunnel; the app backend is local-only.',
-      );
-    }
-    throw error;
-  }
+  const response = await fetch(url, options);
   const data = await response.json();
   if (response.status === 401 && authActive && !url.startsWith('/api/auth/')) {
     showLogin('Your session expired. Sign in again.');
@@ -69,8 +74,7 @@ function showLogin(message = '') {
   dashboardApp.hidden = true;
   passwordScreen.hidden = true;
   loginScreen.hidden = false;
-  if (terminalSocket) terminalSocket.close();
-  if (terminalDialog.open) terminalDialog.close();
+  terminalSocket?.close();
   terminalInstance?.dispose();
   terminalSocket = null;
   terminalInstance = null;
@@ -80,6 +84,7 @@ function showLogin(message = '') {
 }
 
 function showPasswordChange(required) {
+  authActive = true;
   dashboardApp.hidden = true;
   loginScreen.hidden = true;
   passwordScreen.hidden = false;
@@ -108,9 +113,13 @@ async function initializeAuth() {
     const status = await request('/api/auth/status');
     authEnabled = status.enabled;
     terminalButton.hidden = !status.terminal_available;
-    if (status.authenticated && status.must_change_password) showPasswordChange(true);
-    else if (status.authenticated) showDashboard();
-    else showLogin();
+    if (status.authenticated && status.must_change_password) {
+      showPasswordChange(true);
+    } else if (status.authenticated) {
+      showDashboard();
+    } else {
+      showLogin();
+    }
   } catch (error) {
     showLogin(`Could not check sign-in status: ${error.message}`);
   }
@@ -149,8 +158,8 @@ passwordForm.addEventListener('submit', async event => {
       body: JSON.stringify({ password: newPassword.value }),
     });
     passwordForm.reset();
-    showNotice('Password changed.');
     showDashboard();
+    showNotice('Password changed.');
   } catch (error) {
     passwordError.textContent = error.message;
     passwordError.hidden = false;
@@ -159,7 +168,6 @@ passwordForm.addEventListener('submit', async event => {
 
 document.querySelector('#change-password-button').addEventListener('click', () => showPasswordChange(false));
 document.querySelector('#cancel-password-change').addEventListener('click', showDashboard);
-
 document.querySelector('#logout-button').addEventListener('click', async () => {
   try {
     await request('/api/auth/logout', { method: 'POST' });
@@ -232,15 +240,16 @@ async function refresh() {
         const button = document.createElement('button');
         button.className = 'small-button';
         button.addEventListener('click', () => control(program.id, button.dataset.running === 'true'));
-        const removeButton = document.createElement('button');
-        removeButton.className = 'small-button remove-button';
-        removeButton.textContent = 'Remove';
-        removeButton.addEventListener('click', () => removeProgram(program.id, program.name));
-        actions.append(state, button, removeButton);
+        const editButton = document.createElement('button');
+        editButton.className = 'small-button';
+        setIconButton(editButton, 'pen-to-square', 'Edit');
+        editButton.addEventListener('click', () => openEditDialog(entry.program));
+        actions.append(state, button, editButton);
         row.append(main, actions);
-        entry = { row, indicator, name, command, serviceLink, state, button, removeButton };
+        entry = { row, indicator, name, command, serviceLink, state, button, editButton, program };
         programRows.set(program.id, entry);
       }
+      entry.program = program;
       entry.name.textContent = program.name;
       entry.command.textContent = program.command.join(' ');
       entry.serviceLink.hidden = !program.url;
@@ -255,7 +264,7 @@ async function refresh() {
       entry.state.classList.toggle('running', program.running);
       entry.state.textContent = program.running ? `RUNNING${program.pid ? ` · ${program.pid}` : ''}` : 'STOPPED';
       entry.button.classList.toggle('stop', program.running);
-      entry.button.textContent = program.running ? 'Stop' : 'Start';
+      setIconButton(entry.button, program.running ? 'stop' : 'play', program.running ? 'Stop' : 'Start');
       entry.button.dataset.running = String(program.running);
       const currentRow = list.children[index];
       if (currentRow !== entry.row) list.insertBefore(entry.row, currentRow || null);
@@ -280,12 +289,50 @@ async function removeProgram(id, name) {
   if (!window.confirm(`Remove "${name}" from the program list? If it is running, it will keep running.`)) return;
   try {
     const result = await request(`/api/programs/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    editDialog.close();
     showNotice(result.message);
     await refresh();
   } catch (error) {
     showNotice(error.message);
   }
 }
+
+function openEditDialog(program) {
+  editForm.dataset.programId = program.id;
+  editForm.dataset.programName = program.name;
+  editProgramName.value = program.name;
+  editProgramUrl.value = program.url || '';
+  editProgramError.hidden = true;
+  editDialog.showModal();
+  editProgramName.focus();
+}
+
+editForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  editProgramError.hidden = true;
+  const programId = editForm.dataset.programId;
+  if (!programId) return;
+  const values = Object.fromEntries(new FormData(editForm));
+  try {
+    await request(`/api/programs/${encodeURIComponent(programId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: values.name, url: values.url || null }),
+    });
+    editDialog.close();
+    showNotice('Program settings saved.');
+    await refresh();
+  } catch (error) {
+    editProgramError.textContent = error.message;
+    editProgramError.hidden = false;
+  }
+});
+
+editRemoveButton.addEventListener('click', () => {
+  const programId = editForm.dataset.programId;
+  const programName = editForm.dataset.programName;
+  if (programId && programName) void removeProgram(programId, programName);
+});
 
 async function runCommand(name, args = []) {
   await commandsLoaded;
@@ -303,38 +350,12 @@ async function loadCommands() {
   try {
     const { commands } = await request('/api/commands');
     commandDefinitions = new Map(commands.map(command => [command.name, command]));
-    commandList.replaceChildren(...commands.filter(command => !command.program_action).map(command => {
-      const button = document.createElement('button');
-      button.className = 'button button-quiet command-button';
-      button.type = 'button';
-      button.textContent = `/${command.name}`;
-      button.title = command.description;
-      button.addEventListener('click', async () => {
-        try {
-          const args = [];
-          if (command.usage) {
-            const argument = window.prompt(`Argument for /${command.name}: ${command.usage}`);
-            if (argument === null) return;
-            args.push(argument);
-          }
-          const result = await runCommand(command.name, args);
-          if (!result) return;
-          if (command.name === 'ip') {
-            document.querySelector('#global-ip').textContent = result.global_ip;
-          }
-          showNotice(result.message);
-          if (command.name === 'status') await refresh();
-        } catch (error) {
-          showNotice(error.message);
-        }
-      });
-      return button;
-    }));
   } catch (error) {
     showNotice(`Could not load commands: ${error.message}`);
   }
 }
 
+document.querySelector('#refresh-button').addEventListener('click', refresh);
 async function checkForUpdates() {
   if (updateCheckInProgress) return;
   updateCheckInProgress = true;
@@ -346,13 +367,13 @@ async function checkForUpdates() {
     }
     updateBanner.classList.remove('error');
     updateBannerMessage.textContent = `Release ${result.latest_version} is available (installed ${result.current_version}).`;
-    updateBannerAction.textContent = 'Update now';
+    setIconButton(updateBannerAction, 'download', 'Update now');
     updateBannerAction.dataset.action = 'update';
     updateBanner.hidden = false;
   } catch (error) {
     updateBanner.classList.add('error');
     updateBannerMessage.textContent = `Could not check for updates: ${error.message}`;
-    updateBannerAction.textContent = 'Retry';
+    setIconButton(updateBannerAction, 'arrows-rotate', 'Retry update check');
     updateBannerAction.dataset.action = 'retry';
     updateBanner.hidden = false;
   } finally {
@@ -377,73 +398,11 @@ updateBannerAction.addEventListener('click', async () => {
   }
 });
 
-terminalButton.addEventListener('click', () => {
-  if (typeof Terminal !== 'function' || typeof FitAddon === 'undefined') {
-    showNotice('The terminal interface could not be loaded.');
-    return;
-  }
-  terminalDialog.showModal();
-  terminalStatus.textContent = 'Connecting…';
-  terminalInstance = new Terminal({
-    cursorBlink: true,
-    fontFamily: 'SFMono-Regular, Menlo, monospace',
-    fontSize: 13,
-    theme: { background: '#111915', foreground: '#f8faf5', cursor: '#c7f36b' },
-  });
-  const terminal = terminalInstance;
-  const fitAddon = new FitAddon.FitAddon();
-  terminal.loadAddon(fitAddon);
-  terminal.open(terminalElement);
-  fitAddon.fit();
-  const socketUrl = new URL('/api/terminal', window.location.href);
-  socketUrl.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  terminalSocket = new WebSocket(socketUrl);
-  const sendResize = () => {
-    if (terminalSocket.readyState === WebSocket.OPEN) {
-      terminalSocket.send(JSON.stringify({
-        type: 'resize',
-        cols: terminal.cols,
-        rows: terminal.rows,
-      }));
-    }
-  };
-  terminalSocket.addEventListener('open', () => {
-    terminalStatus.textContent = 'Connected';
-    sendResize();
-    terminal.focus();
-  });
-  terminalSocket.addEventListener('message', event => terminal.write(event.data));
-  terminalSocket.addEventListener('close', event => {
-    terminalStatus.textContent = event.code === 4403 ? 'Sign-in required' : 'Disconnected';
-    if (event.code !== 1000 && terminalDialog.open) terminal.write('\r\n[Terminal disconnected]\r\n');
-  });
-  terminal.onData(data => {
-    if (terminalSocket.readyState === WebSocket.OPEN) {
-      terminalSocket.send(JSON.stringify({ type: 'input', data }));
-    }
-  });
-  const fitTerminal = () => {
-    fitAddon.fit();
-    sendResize();
-  };
-  window.addEventListener('resize', fitTerminal);
-  terminalDialog.addEventListener('close', () => window.removeEventListener('resize', fitTerminal), { once: true });
-});
-
-document.querySelector('#close-terminal').addEventListener('click', () => {
-  terminalDialog.close();
-});
-terminalDialog.addEventListener('close', () => {
-  terminalSocket?.close(1000);
-  terminalSocket = null;
-  terminalInstance?.dispose();
-  terminalInstance = null;
-});
-
-document.querySelector('#refresh-button').addEventListener('click', refresh);
 document.querySelector('#add-button').addEventListener('click', () => dialog.showModal());
 document.querySelector('#close-dialog').addEventListener('click', () => dialog.close());
 document.querySelector('#cancel-button').addEventListener('click', () => dialog.close());
+document.querySelector('#close-edit-dialog').addEventListener('click', () => editDialog.close());
+document.querySelector('#cancel-edit-button').addEventListener('click', () => editDialog.close());
 document.querySelector('#add-running-button').addEventListener('click', async () => {
   try {
     const { processes } = await request('/api/processes');
@@ -470,6 +429,7 @@ function renderRunningProcesses() {
     item.className = `process-picker-item${String(process.pid) === runningProcessPid.value ? ' selected' : ''}`;
     item.setAttribute('role', 'option');
     item.setAttribute('aria-selected', String(String(process.pid) === runningProcessPid.value));
+    item.title = `Select process ${process.command.join(' ')} (PID ${process.pid})`;
     const command = document.createElement('strong');
     command.textContent = process.command.join(' ');
     const details = document.createElement('span');
@@ -491,14 +451,14 @@ async function refreshGlobalIp(retryCount = 0) {
   const button = document.querySelector('#ip-button');
   const globalIp = document.querySelector('#global-ip');
   button.disabled = true;
-  button.textContent = 'Checking…';
+  setIconButton(button, 'arrows-rotate', 'Refreshing global IP…');
   try {
     const result = await runCommand('ip');
     globalIp.textContent = result.global_ip;
-    button.textContent = 'Force refresh ↗';
+    setIconButton(button, 'arrows-rotate', 'Force refresh global IP');
   } catch (error) {
     globalIp.textContent = 'Unavailable';
-    button.textContent = 'Retry address ↗';
+    setIconButton(button, 'arrows-rotate', 'Retry global IP lookup');
     if (retryCount < 2) {
       window.setTimeout(() => refreshGlobalIp(retryCount + 1), 1500);
     } else {
@@ -546,6 +506,67 @@ runningForm.addEventListener('submit', async event => {
   }
 });
 
+terminalButton.addEventListener('click', () => {
+  if (typeof Terminal !== 'function' || typeof FitAddon === 'undefined') {
+    showNotice('The terminal interface could not be loaded.');
+    return;
+  }
+  terminalDialog.showModal();
+  terminalStatus.textContent = 'Connecting…';
+  terminalInstance = new Terminal({
+    cursorBlink: true,
+    fontFamily: 'SFMono-Regular, Menlo, monospace',
+    fontSize: 13,
+    theme: { background: '#111915', foreground: '#f8faf5', cursor: '#c7f36b' },
+  });
+  const terminal = terminalInstance;
+  const fitAddon = new FitAddon.FitAddon();
+  terminal.loadAddon(fitAddon);
+  terminal.open(terminalElement);
+  fitAddon.fit();
+  const socketUrl = new URL('/api/terminal', window.location.href);
+  socketUrl.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  terminalSocket = new WebSocket(socketUrl);
+  const sendResize = () => {
+    if (terminalSocket?.readyState === WebSocket.OPEN) {
+      terminalSocket.send(JSON.stringify({
+        type: 'resize',
+        cols: terminal.cols,
+        rows: terminal.rows,
+      }));
+    }
+  };
+  terminalSocket.addEventListener('open', () => {
+    terminalStatus.textContent = 'Connected';
+    sendResize();
+    terminal.focus();
+  });
+  terminalSocket.addEventListener('message', event => terminal.write(event.data));
+  terminalSocket.addEventListener('close', event => {
+    terminalStatus.textContent = event.code === 4403 ? 'Sign-in required' : 'Disconnected';
+    if (event.code !== 1000 && terminalDialog.open) terminal.write('\r\n[Terminal disconnected]\r\n');
+  });
+  terminal.onData(data => {
+    if (terminalSocket?.readyState === WebSocket.OPEN) {
+      terminalSocket.send(JSON.stringify({ type: 'input', data }));
+    }
+  });
+  const fitTerminal = () => {
+    fitAddon.fit();
+    sendResize();
+  };
+  window.addEventListener('resize', fitTerminal);
+  terminalDialog.addEventListener('close', () => window.removeEventListener('resize', fitTerminal), { once: true });
+});
+
+document.querySelector('#close-terminal').addEventListener('click', () => terminalDialog.close());
+terminalDialog.addEventListener('close', () => {
+  terminalSocket?.close(1000);
+  terminalSocket = null;
+  terminalInstance?.dispose();
+  terminalInstance = null;
+});
+
 function updateClock() {
   document.querySelector('#clock').textContent = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date());
 }
@@ -556,8 +577,8 @@ function initializeDashboard() {
   commandsLoaded = loadCommands();
   commandsLoaded.then(refreshGlobalIp);
   checkForUpdates();
-  dashboardIntervals.push(window.setInterval(updateClock, 1000));
   refresh();
+  dashboardIntervals.push(window.setInterval(updateClock, 1000));
   dashboardIntervals.push(window.setInterval(refresh, 10000));
   dashboardIntervals.push(window.setInterval(checkForUpdates, 5 * 60 * 1000));
 }

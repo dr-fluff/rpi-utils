@@ -211,6 +211,30 @@ class ProgramManager:
         self._save(remaining)
         self.processes.pop(program_id, None)
 
+    def update_program(self, program_id: str, name: str, url: str | None) -> dict:
+        programs = self._load()
+        program = next((item for item in programs if item["id"] == program_id), None)
+        if program is None:
+            raise KeyError("Program not found")
+
+        display_name = name.strip()
+        if not display_name:
+            raise ValueError("Name cannot be empty")
+        proposed_id = re.sub(r"[^a-z0-9]+", "-", display_name.casefold()).strip("-")
+        if not proposed_id:
+            raise ValueError("Name must contain letters or numbers")
+        if any(
+            item["id"] != program_id
+            and re.sub(r"[^a-z0-9]+", "-", item["name"].casefold()).strip("-") == proposed_id
+            for item in programs
+        ):
+            raise ValueError("A program with this name already exists")
+
+        program["name"] = display_name
+        program["url"] = _validated_service_url(url)
+        self._save(programs)
+        return next(item for item in self.list_programs() if item["id"] == program_id)
+
     def _save_program(
         self,
         name: str,

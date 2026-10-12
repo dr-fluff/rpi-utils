@@ -4,6 +4,7 @@ import hmac
 import ipaddress
 import json
 import os
+import shlex
 import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -34,14 +35,23 @@ from app.auth import (
     valid_session,
 )
 from app.commands import COMMANDS, COMMAND_BY_NAME, CommandError, get_global_ip, run_command
+from app.custom_commands import (
+    MAX_SCRIPT_BYTES,
+    CustomCommandStore,
+    UserSettingsStore,
+)
 from app.programs import ProgramManager
 from app.terminal import terminal_socket
 from app.telegram.bot import telegram_polling
+from app.telegram.settings import TelegramSettingsStore
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "app" / "static"
 GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/dr-fluff/rpi-utils/releases/latest"
 manager = ProgramManager()
+user_settings = UserSettingsStore()
+custom_commands = CustomCommandStore(user_settings)
+telegram_settings = TelegramSettingsStore()
 
 
 def is_local_network_host(hostname: str | None) -> bool:
@@ -69,8 +79,40 @@ class RunningProgramInput(BaseModel):
     url: str | None = Field(default=None, max_length=2048)
 
 
+class ProgramEditInput(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    url: str | None = Field(default=None, max_length=2048)
+
+
 class CommandInput(BaseModel):
     args: list[str] = Field(default_factory=list, max_length=10)
+
+
+class CustomCommandInput(BaseModel):
+    name: str = Field(min_length=1, max_length=32)
+    description: str = Field(min_length=1, max_length=120)
+    command: str = Field(default="", max_length=1000)
+    script_name: str | None = Field(default=None, max_length=68)
+    arguments: str = Field(default="", max_length=1000)
+    telegram_enabled: bool = False
+    requires_confirmation: bool = False
+    timeout_seconds: int = Field(default=60, ge=1, le=300)
+    icon: str = Field(default="bolt", max_length=32)
+
+
+class UserSettingsInput(BaseModel):
+    scripts_directory: str = Field(min_length=1, max_length=1024)
+    default_timeout_seconds: int = Field(ge=1, le=300)
+
+
+class TelegramSettingsInput(BaseModel):
+    bot_token: str = Field(default="", max_length=256)
+    allowed_chat_ids: str = Field(default="", max_length=4096)
+    clear_bot_token: bool = False
+
+
+class ScriptInput(BaseModel):
+    content: str = Field(max_length=MAX_SCRIPT_BYTES)
 
 
 class LoginInput(BaseModel):
@@ -83,8 +125,10 @@ class PasswordChangeInput(BaseModel):
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    bot_task = asyncio.create_task(telegram_polling(manager))
+    app.state.telegram_task_lock = asyncio.Lock()
+    app.state.telegram_task = asyncio.create_task(telegram_polling(manager, custom_commands))
     yield
+    bot_task = app.state.telegram_task
     bot_task.cancel()
     try:
         await bot_task
@@ -128,7 +172,7 @@ class LocalOnlyMiddleware(BaseHTTPMiddleware):
                 valid_origin = False
             if not valid_origin:
                 return PlainTextResponse("Private network access only", status_code=403)
-        public_paths = {"/", "/api/auth/status", "/api/auth/login"}
+        public_paths = {"/", "/commands", "/api/auth/status", "/api/auth/login"}
         if password and request.url.path not in public_paths and not request.url.path.startswith("/static/"):
             token = request.cookies.get(SESSION_COOKIE)
             if not valid_session(password, token):
@@ -138,6 +182,7 @@ class LocalOnlyMiddleware(BaseHTTPMiddleware):
             and password_change_required()
             and request.url.path not in {
                 "/",
+                "/commands",
                 "/api/auth/status",
                 "/api/auth/login",
                 "/api/auth/password",
@@ -159,6 +204,31 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/")
 async def dashboard() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/commands")
+async def commands_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "commands.html")
+
+
+@app.get("/settings")
+async def settings_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "settings.html")
+
+
+async def restart_telegram_bot(request: Request) -> bool:
+    lock = getattr(request.app.state, "telegram_task_lock", None)
+    if lock is None:
+        return False
+    async with lock:
+        previous_task = getattr(request.app.state, "telegram_task", None)
+        if previous_task is not None and not previous_task.done():
+            previous_task.cancel()
+            await asyncio.gather(previous_task, return_exceptions=True)
+        request.app.state.telegram_task = asyncio.create_task(
+            telegram_polling(manager, custom_commands)
+        )
+    return True
 
 
 @app.get("/api/auth/status")
@@ -228,6 +298,8 @@ async def auth_change_password(
         change_password(change.password)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
     except OSError as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
     response.headers["Cache-Control"] = "no-store"
@@ -278,17 +350,196 @@ async def update_check() -> dict:
 
 @app.get("/api/commands")
 async def available_commands() -> dict:
-    return {"commands": COMMANDS}
+    built_in = [{**command, "is_custom": False} for command in COMMANDS]
+    user_defined = [
+        {
+            **command,
+            "command": shlex.join(command["command"]),
+            "usage": "",
+            "program_action": False,
+            "is_custom": True,
+        }
+        for command in custom_commands.list()
+    ]
+    return {"commands": built_in + user_defined}
+
+
+@app.get("/api/settings")
+async def get_settings() -> dict:
+    try:
+        settings = user_settings.get()
+    except (OSError, RuntimeError, ValueError) as error:
+        raise HTTPException(status_code=500, detail=f"Could not read settings: {error}") from error
+    return {
+        "scripts_directory": settings["scripts_directory"],
+        "default_timeout_seconds": settings["default_timeout_seconds"],
+    }
+
+
+@app.put("/api/settings")
+async def update_settings(settings: UserSettingsInput) -> dict:
+    try:
+        updated = user_settings.update(settings.scripts_directory, settings.default_timeout_seconds)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+    except OSError as error:
+        raise HTTPException(status_code=500, detail=f"Could not save settings: {error}") from error
+    return {
+        "scripts_directory": updated["scripts_directory"],
+        "default_timeout_seconds": updated["default_timeout_seconds"],
+    }
+
+
+@app.get("/api/telegram-settings")
+async def get_telegram_settings(response: Response) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return telegram_settings.get()
+    except (OSError, RuntimeError, ValueError) as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@app.put("/api/telegram-settings")
+async def update_telegram_settings(
+    settings: TelegramSettingsInput,
+    request: Request,
+    response: Response,
+) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        updated = telegram_settings.update(
+            settings.bot_token,
+            settings.allowed_chat_ids,
+            settings.clear_bot_token,
+        )
+        updated["restarted"] = await restart_telegram_bot(request)
+        return updated
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except (OSError, RuntimeError) as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@app.get("/api/scripts")
+async def list_scripts() -> dict:
+    try:
+        return {
+            "scripts_directory": str(user_settings.scripts_directory()),
+            "scripts": user_settings.list_scripts(),
+        }
+    except (OSError, RuntimeError, ValueError) as error:
+        raise HTTPException(status_code=500, detail=f"Could not list scripts: {error}") from error
+
+
+@app.get("/api/scripts/{script_name}")
+async def get_script(script_name: str) -> dict:
+    try:
+        return {"name": script_name, "content": user_settings.read_script(script_name)}
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except (OSError, RuntimeError) as error:
+        raise HTTPException(status_code=500, detail=f"Could not read script: {error}") from error
+
+
+@app.put("/api/scripts/{script_name}")
+async def save_script(script_name: str, script: ScriptInput) -> dict:
+    try:
+        return user_settings.write_script(script_name, script.content)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except OSError as error:
+        raise HTTPException(status_code=500, detail=f"Could not save script: {error}") from error
+
+
+@app.delete("/api/scripts/{script_name}")
+async def delete_script(script_name: str) -> dict:
+    try:
+        user_settings.delete_script(script_name)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except (OSError, RuntimeError) as error:
+        raise HTTPException(status_code=500, detail=f"Could not delete script: {error}") from error
+    return {"message": f"Deleted script {script_name}."}
 
 
 @app.post("/api/commands/{command_name}")
 async def execute_command(command_name: str, command_input: CommandInput) -> dict:
-    if command_name not in COMMAND_BY_NAME:
+    if command_name not in COMMAND_BY_NAME and custom_commands.get(command_name) is None:
         raise HTTPException(status_code=404, detail=f"Unknown command: {command_name}")
     try:
-        return await run_command(command_name, manager, command_input.args)
+        return await run_command(command_name, manager, command_input.args, custom_commands)
     except CommandError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post("/api/custom-commands", status_code=201)
+async def add_custom_command(command: CustomCommandInput) -> dict:
+    try:
+        result = custom_commands.add(
+            command.name,
+            command.description,
+            command.command,
+            command.script_name,
+            command.arguments,
+            command.telegram_enabled,
+            command.requires_confirmation,
+            command.timeout_seconds,
+            set(COMMAND_BY_NAME),
+            command.icon,
+        )
+        resolved = custom_commands.get(result["name"])
+        if resolved is None:
+            raise RuntimeError("Saved command could not be loaded")
+        return {**resolved, "command": shlex.join(resolved["command"])}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@app.put("/api/custom-commands/{command_name}")
+async def edit_custom_command(command_name: str, command: CustomCommandInput) -> dict:
+    try:
+        result = custom_commands.update(
+            command_name,
+            command.name,
+            command.description,
+            command.command,
+            command.script_name,
+            command.arguments,
+            command.telegram_enabled,
+            command.requires_confirmation,
+            command.timeout_seconds,
+            set(COMMAND_BY_NAME),
+            command.icon,
+        )
+        resolved = custom_commands.get(result["name"])
+        if resolved is None:
+            raise RuntimeError("Updated command could not be loaded")
+        return {**resolved, "command": shlex.join(resolved["command"])}
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@app.delete("/api/custom-commands/{command_name}")
+async def delete_custom_command(command_name: str) -> dict:
+    try:
+        custom_commands.remove(command_name)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+    return {"message": f"Removed /{command_name}."}
 
 
 @app.get("/api/processes")
@@ -322,6 +573,16 @@ async def remove_program(program_id: str) -> dict:
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     return {"message": "Program removed from the list. Any running process was left running."}
+
+
+@app.put("/api/programs/{program_id}")
+async def update_program(program_id: str, program: ProgramEditInput) -> dict:
+    try:
+        return manager.update_program(program_id, program.name, program.url)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @app.post("/api/programs/{program_id}/start")

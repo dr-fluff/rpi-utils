@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from app.custom_commands import CustomCommandStore, run_custom_command
 from app.programs import ProgramManager
 
 COMMANDS = (
@@ -67,11 +68,22 @@ class CommandError(Exception):
     pass
 
 
-def help_message() -> str:
+def help_message(custom_commands: CustomCommandStore | None = None) -> str:
+    commands = list(COMMANDS)
+    if custom_commands is not None:
+        commands.extend(
+            {
+                "name": command["name"],
+                "description": command["description"],
+                "usage": "",
+            }
+            for command in custom_commands.list()
+            if command["telegram_enabled"] and not command["requires_confirmation"]
+        )
     return "Available commands:\n" + "\n".join(
         f"/{command['name']}{' ' + command['usage'] if command['usage'] else ''} — "
         f"{command['description']}"
-        for command in COMMANDS
+        for command in commands
     )
 
 
@@ -93,10 +105,24 @@ async def run_command(
     name: str,
     manager: ProgramManager,
     args: list[str] | None = None,
+    custom_commands: CustomCommandStore | None = None,
+    source: str = "gui",
 ) -> dict[str, Any]:
     command = COMMAND_BY_NAME.get(name)
     if command is None:
-        raise CommandError(f"Unknown command: {name}")
+        custom = custom_commands.get(name) if custom_commands is not None else None
+        if custom is None:
+            raise CommandError(f"Unknown command: {name}")
+        if args:
+            raise CommandError(f"Usage: /{name}")
+        if source == "telegram" and not custom["telegram_enabled"]:
+            raise CommandError(f"/{name} is not enabled for Telegram")
+        if source == "telegram" and custom["requires_confirmation"]:
+            raise CommandError(f"/{name} requires confirmation; run it from the dashboard")
+        try:
+            return await asyncio.to_thread(run_custom_command, custom)
+        except RuntimeError as error:
+            raise CommandError(str(error)) from error
     arguments = args or []
     usage = command["usage"]
     if (usage and len(arguments) != 1) or (not usage and arguments):
@@ -104,7 +130,7 @@ async def run_command(
         raise CommandError(f"Usage: {invocation}")
 
     if name == "help":
-        return {"message": help_message()}
+        return {"message": help_message(custom_commands)}
     if name == "ip":
         results = await asyncio.gather(
             asyncio.to_thread(get_global_ip),

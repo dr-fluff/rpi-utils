@@ -18,6 +18,9 @@ UPGRADE_HELPER="/usr/local/sbin/rpi-utils-system-upgrade"
 REBOOT_HELPER="/usr/local/sbin/rpi-utils-reboot"
 SUDOERS_FILE="/etc/sudoers.d/rpi-utils-updater"
 AUTH_ENV_FILE="${SERVICE_HOME}/.config/rpi-utils/env"
+USER_CONFIG_DIR="${SERVICE_HOME}/.config/rpi-utils"
+USER_SETTINGS_FILE="${USER_CONFIG_DIR}/settings.json"
+USER_SCRIPTS_DIR="${USER_CONFIG_DIR}/scripts"
 
 if [[ "$(id -u)" -ne 0 ]]; then
 	echo "Run with sudo: sudo ./install.sh" >&2
@@ -33,10 +36,38 @@ if [[ -z "${SERVICE_HOME}" ]]; then
 fi
 
 progress "Preparing dashboard sign-in"
-install -d -o "${SERVICE_USER}" -m 0700 "$(dirname "${AUTH_ENV_FILE}")"
+install -d -o "${SERVICE_USER}" -m 0700 "${USER_CONFIG_DIR}" "${USER_SCRIPTS_DIR}"
 touch "${AUTH_ENV_FILE}"
 chown "${SERVICE_USER}" "${AUTH_ENV_FILE}"
 chmod 0600 "${AUTH_ENV_FILE}"
+if [[ ! -e "${USER_SETTINGS_FILE}" ]]; then
+	"${PYTHON}" - "${USER_SETTINGS_FILE}" "${USER_SCRIPTS_DIR}" \
+		"${USER_CONFIG_DIR}/commands.json" <<'PY'
+import json
+import os
+import sys
+from pathlib import Path
+
+settings_path = Path(sys.argv[1])
+legacy_commands_path = Path(sys.argv[3])
+custom_commands = []
+if legacy_commands_path.exists():
+    custom_commands = json.loads(legacy_commands_path.read_text())
+settings = {
+    "scripts_directory": sys.argv[2],
+    "default_timeout_seconds": 60,
+    "custom_commands": custom_commands,
+    "other_settings": {},
+}
+with settings_path.open("x") as output:
+    json.dump(settings, output, indent=2)
+    output.write("\n")
+os.chmod(settings_path, 0o600)
+PY
+	chown "${SERVICE_USER}" "${USER_SETTINGS_FILE}"
+fi
+chown "${SERVICE_USER}" "${USER_SETTINGS_FILE}"
+chmod 0600 "${USER_SETTINGS_FILE}"
 TEMP_PASSWORD=""
 if ! grep -Eq '^[[:space:]]*RPI_UTILS_WEB_PASSWORD[[:space:]]*=[[:space:]]*[^[:space:]#]' "${AUTH_ENV_FILE}"; then
 	TEMP_PASSWORD="$("${PYTHON}" -c 'import secrets; print(secrets.token_urlsafe(24))')"

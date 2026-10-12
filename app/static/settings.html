@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f3f4ee">
+  <title>Settings · Pi Console</title>
+  <link rel="stylesheet" href="/static/styles.css?v=7">
+  <script src="/static/settings.js?v=1" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Pi Console home"><span class="brand-mark">π</span><span>PI<span class="brand-light">CONSOLE</span></span></a>
+    <div class="topbar-actions"><span class="local-status"><span class="status-dot"></span> DEVICE SETTINGS</span><a class="button button-quiet icon-button" href="/commands" title="Commands" aria-label="Commands"><span class="fa-icon fa-terminal" aria-hidden="true"></span></a><a class="button button-quiet icon-button" href="/" title="Dashboard" aria-label="Dashboard"><span class="fa-icon fa-house" aria-hidden="true"></span></a></div>
+  </header>
+  <main class="commands-page">
+    <section class="masthead">
+      <div><p class="eyebrow">CONTROL SURFACE / DEVICE CONFIGURATION</p><h1>Device<br><span>settings.</span></h1></div>
+    </section>
+    <p class="commands-intro">Configure private script storage and the Telegram bot that controls this device.</p>
+
+    <section class="commands-group" aria-labelledby="device-settings-heading">
+      <div class="section-heading"><div><p class="eyebrow">SCRIPTS</p><h2 id="device-settings-heading">Device settings</h2></div></div>
+      <form id="settings-form" class="settings-form">
+        <label for="scripts-directory-input">Scripts directory</label>
+        <input id="scripts-directory-input" name="scripts_directory" required maxlength="1024" spellcheck="false">
+        <p class="field-hint">Use an absolute path outside the Git checkout. Pi Console creates the directory if it does not exist. Commands using saved scripts look for their script by filename in this directory.</p>
+        <label for="default-timeout-input">Default script timeout (seconds)</label>
+        <input id="default-timeout-input" name="default_timeout_seconds" type="number" min="1" max="300" required>
+        <div class="dialog-actions"><button class="button button-dark icon-button" type="submit" title="Save device settings" aria-label="Save device settings"><span class="fa-icon fa-floppy-disk" aria-hidden="true"></span></button></div>
+      </form>
+    </section>
+
+    <section class="commands-group" aria-labelledby="telegram-settings-heading">
+      <div class="section-heading"><div><p class="eyebrow">REMOTE CONTROL</p><h2 id="telegram-settings-heading">Telegram</h2></div><span id="telegram-status" class="command-badge">Checking configuration</span></div>
+      <p class="settings-description">The bot token and authorized chat IDs are saved in the private service environment file. The saved token is never sent back to this page.</p>
+      <form id="telegram-settings-form" class="settings-form">
+        <label for="telegram-bot-token">Bot token</label>
+        <input id="telegram-bot-token" name="bot_token" type="password" maxlength="256" autocomplete="new-password" placeholder="Enter a token to set or replace it">
+        <p id="telegram-token-status" class="field-hint"></p>
+        <label class="check-option"><input id="clear-telegram-token" name="clear_bot_token" type="checkbox"> Remove the saved bot token</label>
+        <label for="telegram-chat-ids">Authorized chat IDs</label>
+        <textarea id="telegram-chat-ids" name="allowed_chat_ids" class="telegram-chat-ids" maxlength="4096" spellcheck="false" placeholder="One numeric chat ID per line, or separate IDs with commas"></textarea>
+        <p class="field-hint">Only these Telegram chats can control the device. Find your chat ID using a trusted Telegram bot, then enter each ID on its own line or separate them with commas.</p>
+        <p id="telegram-form-error" class="login-error" role="alert" hidden></p>
+        <div class="dialog-actions"><button class="button button-dark icon-button" type="submit" title="Save Telegram settings" aria-label="Save Telegram settings"><span class="fa-icon fa-floppy-disk" aria-hidden="true"></span></button></div>
+      </form>
+    </section>
+
+    <p id="settings-notice" class="notice" role="status"></p>
+    <footer><span>PI CONSOLE <span class="footer-separator">·</span> PRIVATE BY DESIGN</span><span>AUTHORIZED ACCESS ONLY</span></footer>
+  </main>
+</body>
+</html>

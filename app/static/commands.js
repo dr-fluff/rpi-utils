@@ -225,6 +225,7 @@ async function executeCommand(name) {
     args.push(value);
   }
   try {
+    window.showCommandRunning(name, command.description);
     const result = await api(`/api/commands/${encodeURIComponent(name)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

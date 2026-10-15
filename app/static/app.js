@@ -458,11 +458,17 @@ async function runCommand(name, args = []) {
   const command = commandDefinitions.get(name);
   if (!command) throw new Error(`Command /${name} is not available`);
   if (command.requires_confirmation && !window.confirm(`Run /${name}? ${command.description}`)) return null;
-  return request(`/api/commands/${encodeURIComponent(name)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ args }),
-  });
+  window.showCommandRunning(name, command.description);
+  try {
+    return await request(`/api/commands/${encodeURIComponent(name)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ args }),
+    });
+  } catch (error) {
+    window.showCommandOutput(name, command.description, null, error.message);
+    throw error;
+  }
 }
 
 async function loadCommands() {

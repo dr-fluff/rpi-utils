@@ -5,6 +5,8 @@
   let status;
   let details;
   let message;
+  let closeButton;
+  let doneButton;
 
   function initialize() {
     dialog = document.createElement('dialog');
@@ -21,17 +23,17 @@
     eyebrow.textContent = 'COMMAND OUTPUT';
     title = document.createElement('h2');
     headingText.append(eyebrow, title);
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.className = 'close-button icon-button';
-    close.title = 'Close output';
-    close.setAttribute('aria-label', 'Close output');
+    closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'close-button icon-button';
+    closeButton.title = 'Close output';
+    closeButton.setAttribute('aria-label', 'Close output');
     const closeIcon = document.createElement('span');
     closeIcon.className = 'fa-icon fa-xmark';
     closeIcon.setAttribute('aria-hidden', 'true');
-    close.append(closeIcon);
-    close.addEventListener('click', () => dialog.close());
-    heading.append(headingText, close);
+    closeButton.append(closeIcon);
+    closeButton.addEventListener('click', () => dialog.close());
+    heading.append(headingText, closeButton);
     dialog.addEventListener('click', event => {
       if (event.target === dialog) dialog.close();
     });
@@ -48,12 +50,12 @@
     message.setAttribute('aria-label', 'Command output');
     const actions = document.createElement('div');
     actions.className = 'dialog-actions';
-    const done = document.createElement('button');
-    done.type = 'button';
-    done.className = 'button button-dark';
-    done.textContent = 'Done';
-    done.addEventListener('click', () => dialog.close());
-    actions.append(done);
+    doneButton = document.createElement('button');
+    doneButton.type = 'button';
+    doneButton.className = 'button button-dark';
+    doneButton.textContent = 'Done';
+    doneButton.addEventListener('click', () => dialog.close());
+    actions.append(doneButton);
 
     content.append(heading, description, status, details, message, actions);
     dialog.append(content);
@@ -100,6 +102,27 @@
     message.append(plainText);
   }
 
+  window.showCommandRunning = (name, commandDescription) => {
+    if (!dialog) initialize();
+    title.textContent = `/${name}`;
+    description.textContent = commandDescription || 'Command execution';
+    status.textContent = 'Running…';
+    status.classList.remove('error');
+    status.classList.add('command-running');
+    details.replaceChildren();
+    details.hidden = true;
+    message.replaceChildren();
+    message.hidden = false;
+    const indicator = document.createElement('div');
+    indicator.className = 'command-running-indicator';
+    indicator.setAttribute('role', 'status');
+    indicator.textContent = 'The command is still running. This will update when it finishes.';
+    message.append(indicator);
+    closeButton.disabled = true;
+    doneButton.disabled = true;
+    if (!dialog.open) dialog.showModal();
+  };
+
   window.showCommandOutput = (name, commandDescription, result, error = null) => {
     if (!dialog) initialize();
     const succeeded = !error;
@@ -107,6 +130,9 @@
     description.textContent = commandDescription || 'Command execution result';
     status.textContent = succeeded ? 'Completed successfully' : 'Command failed';
     status.classList.toggle('error', !succeeded);
+    status.classList.remove('command-running');
+    closeButton.disabled = false;
+    doneButton.disabled = false;
 
     const outputFields = succeeded && result && typeof result === 'object'
       ? Object.entries(result).filter(([key, value]) => key !== 'message' && value !== undefined)
@@ -129,6 +155,6 @@
     const showMessage = output && !(succeeded && ['ip', 'start', 'stop'].includes(name) && outputFields.length);
     if (showMessage) renderMessage(output);
     message.hidden = !showMessage;
-    dialog.showModal();
+    if (!dialog.open) dialog.showModal();
   };
 })();

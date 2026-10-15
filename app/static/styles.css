@@ -21,6 +21,7 @@ main{max-width:1120px;margin:auto;padding:68px 7.2% 0}.masthead{display:flex;ali
 .command-output-description{margin:0 0 12px;color:var(--muted);font-size:12px}
 .command-output-status{margin:0 0 14px;color:#278454;font-size:11px;font-weight:700}
 .command-output-status.error{color:#a34d3b}
+.command-output-status.command-running{display:flex;align-items:center;gap:9px;color:#52664f}.command-output-status.command-running::before{width:12px;height:12px;border:2px solid #cbd5c9;border-top-color:#278454;border-radius:50%;content:"";animation:command-spin .8s linear infinite}.command-running-indicator{display:flex;align-items:center;min-height:72px;padding:18px;border-radius:6px;background:#eef1eb;color:#52664f;font-size:12px}@keyframes command-spin{to{transform:rotate(360deg)}}
 .command-output-details{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:0 0 16px}
 .command-output-details[hidden]{display:none}
 .command-output-details>div{padding:10px 12px;border-radius:5px;background:#eef1eb}

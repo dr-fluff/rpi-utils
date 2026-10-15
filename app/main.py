@@ -48,6 +48,7 @@ from app.docker_projects import (
     DockerUnavailableError,
 )
 from app.programs import ProgramManager
+from app.services import ServiceManager
 from app.terminal import terminal_socket
 from app.telegram.bot import telegram_polling
 from app.telegram.settings import TelegramSettingsStore
@@ -56,6 +57,7 @@ ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "app" / "static"
 GITHUB_RELEASES_URL = "https://api.github.com/repos/dr-fluff/rpi-utils/releases?per_page=100"
 manager = ProgramManager()
+services = ServiceManager()
 docker_projects = DockerProjectManager()
 user_settings = UserSettingsStore()
 custom_commands = CustomCommandStore(user_settings)
@@ -90,6 +92,10 @@ class RunningProgramInput(BaseModel):
 class ProgramEditInput(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     url: str | None = Field(default=None, max_length=2048)
+
+
+class ServiceInput(BaseModel):
+    unit: str = Field(min_length=1, max_length=256)
 
 
 class DockerProjectInput(BaseModel):
@@ -350,7 +356,10 @@ async def terminal(websocket: WebSocket) -> None:
 
 @app.get("/api/status")
 async def status() -> dict:
-    return {"programs": manager.list_programs()}
+    return {
+        "programs": manager.list_programs(),
+        "services": await asyncio.to_thread(services.list_services),
+    }
 
 
 @app.get("/api/update-check")
@@ -746,6 +755,39 @@ async def stop_program(program_id: str) -> dict:
         return await run_command("stop", manager, [program_id])
     except CommandError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post("/api/services", status_code=201)
+async def add_service(service: ServiceInput) -> dict:
+    try:
+        return await asyncio.to_thread(services.add, service.unit)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@app.delete("/api/services/{unit}")
+async def remove_service(unit: str) -> dict:
+    try:
+        await asyncio.to_thread(services.remove, unit)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"message": "Service removed from the list. It was left unchanged."}
+
+
+@app.post("/api/services/{unit}/{action}")
+async def control_service(unit: str, action: str) -> dict:
+    try:
+        return await asyncio.to_thread(services.control, unit, action)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
 
 
 @app.get("/api/ip")

@@ -76,6 +76,16 @@
         </div>
       </div>
       <div id="program-list" class="program-list" aria-live="polite"></div>
+      <div class="service-section">
+        <div class="section-heading">
+          <div><p class="eyebrow">SYSTEMD</p><h2>Services</h2></div>
+          <div class="service-heading-actions">
+            <input id="service-search" class="list-search" type="search" placeholder="Search services" aria-label="Search services">
+            <button class="button button-accent icon-button" id="add-service-button" type="button" title="Add system service" aria-label="Add system service"><span class="fa-icon fa-plus" aria-hidden="true"></span></button>
+          </div>
+        </div>
+        <div id="service-list" class="program-list" aria-live="polite"></div>
+      </div>
       <div class="docker-section">
         <div class="section-heading">
           <div><p class="eyebrow">DOCKER / COMPOSE</p><h2>Containers</h2></div>
@@ -101,6 +111,15 @@
       <label>Working directory <span class="optional">OPTIONAL</span><input name="cwd" placeholder="/home/pi/project"></label>
       <label>Web address <span class="optional">OPTIONAL</span><input name="url" type="url" maxlength="2048" placeholder="http://192.168.0.10:3000"></label>
       <div class="dialog-actions"><button type="button" class="button button-quiet icon-button" id="cancel-button" title="Cancel" aria-label="Cancel"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button><button class="button button-dark icon-button" type="submit" title="Save program" aria-label="Save program"><span class="fa-icon fa-floppy-disk" aria-hidden="true"></span></button></div>
+    </form>
+  </dialog>
+
+  <dialog id="service-dialog">
+    <form id="service-form">
+      <div class="dialog-heading"><div><p class="eyebrow">SYSTEMD SERVICE</p><h2>Add a service</h2></div><button type="button" class="close-button icon-button" id="close-service-dialog" title="Close" aria-label="Close"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button></div>
+      <label>Service unit<input name="unit" required maxlength="256" placeholder="nginx.service" autocapitalize="off" spellcheck="false"></label>
+      <p class="field-hint">Enter a systemd service unit, such as <code>ssh.service</code>. The <code>.service</code> suffix is optional.</p>
+      <div class="dialog-actions"><button type="button" class="button button-quiet icon-button" id="cancel-service-button" title="Cancel" aria-label="Cancel"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button><button class="button button-dark icon-button" type="submit" title="Add service" aria-label="Add service"><span class="fa-icon fa-plus" aria-hidden="true"></span></button></div>
     </form>
   </dialog>
 

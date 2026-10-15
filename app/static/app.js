@@ -1,4 +1,8 @@
 const list = document.querySelector('#program-list');
+const serviceList = document.querySelector('#service-list');
+const serviceSearch = document.querySelector('#service-search');
+const serviceDialog = document.querySelector('#service-dialog');
+const serviceForm = document.querySelector('#service-form');
 const notice = document.querySelector('#notice');
 const dialog = document.querySelector('#program-dialog');
 const form = document.querySelector('#program-form');
@@ -45,6 +49,7 @@ let availableProcesses = [];
 let commandDefinitions = new Map();
 let commandsLoaded = Promise.resolve();
 const programRows = new Map();
+const serviceRows = new Map();
 let refreshInProgress = false;
 let authActive = false;
 let dashboardStarted = false;
@@ -181,7 +186,7 @@ async function refresh() {
   if (refreshInProgress) return;
   refreshInProgress = true;
   try {
-    const { programs } = await request('/api/status');
+    const { programs, services } = await request('/api/status');
     document.querySelector('#program-count').textContent = programs.length;
     document.querySelector('#active-count').textContent = programs.filter(program => program.running).length;
     if (!programs.length) {
@@ -196,6 +201,7 @@ async function refresh() {
         empty.append(title, document.createTextNode('Add a program to start managing processes on this Pi.'));
         list.append(empty);
       }
+      renderServices(services);
       return;
     }
     list.querySelector('.empty-state')?.remove();
@@ -263,10 +269,122 @@ async function refresh() {
       const currentRow = list.children[index];
       if (currentRow !== entry.row) list.insertBefore(entry.row, currentRow || null);
     });
+    renderServices(services);
   } catch (error) {
     showNotice(error.message);
   } finally {
     refreshInProgress = false;
+  }
+}
+
+function renderServices(services) {
+  if (!services.length) {
+    serviceRows.forEach(entry => entry.row.remove());
+    serviceRows.clear();
+    if (!serviceList.querySelector('.empty-state')) {
+      serviceList.replaceChildren();
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      const title = document.createElement('strong');
+      title.textContent = 'No services yet';
+      empty.append(title, document.createTextNode('Add a systemd service to check and control it here.'));
+      serviceList.append(empty);
+    }
+    return;
+  }
+  serviceList.querySelector('.empty-state')?.remove();
+  const units = new Set(services.map(service => service.unit));
+  for (const [unit, entry] of serviceRows) {
+    if (!units.has(unit)) {
+      entry.row.remove();
+      serviceRows.delete(unit);
+    }
+  }
+  services.forEach((service, index) => {
+    let entry = serviceRows.get(service.unit);
+    if (!entry) {
+      const row = document.createElement('article');
+      row.className = 'program-row';
+      const main = document.createElement('div');
+      main.className = 'program-main';
+      const indicator = document.createElement('span');
+      indicator.className = 'program-indicator';
+      const text = document.createElement('div');
+      const name = document.createElement('div');
+      name.className = 'program-name';
+      const detail = document.createElement('div');
+      detail.className = 'program-command';
+      text.append(name, detail);
+      main.append(indicator, text);
+      const actions = document.createElement('div');
+      actions.className = 'program-actions';
+      const state = document.createElement('span');
+      state.className = 'program-state';
+      const button = document.createElement('button');
+      button.className = 'small-button';
+      button.addEventListener('click', () => controlService(service.unit, button.dataset.running === 'true'));
+      const removeButton = document.createElement('button');
+      removeButton.className = 'small-button remove-button';
+      setIconButton(removeButton, 'trash', 'Remove service');
+      removeButton.addEventListener('click', () => removeService(service.unit));
+      actions.append(state, button, removeButton);
+      row.append(main, actions);
+      entry = { row, indicator, name, detail, state, button };
+      serviceRows.set(service.unit, entry);
+    }
+    entry.name.textContent = service.unit;
+    entry.detail.textContent = `${service.description} · ${service.sub_status}${service.error ? ` · ${service.error}` : ''}`;
+    entry.indicator.classList.toggle('running', service.running);
+    entry.state.classList.toggle('running', service.running);
+    entry.state.textContent = service.running ? 'RUNNING' : service.status.toUpperCase();
+    entry.button.classList.toggle('stop', service.running);
+    setIconButton(entry.button, service.running ? 'stop' : 'play', service.running ? 'Stop service' : 'Start service');
+    entry.button.dataset.running = String(service.running);
+    const currentRow = serviceList.children[index];
+    if (currentRow !== entry.row) serviceList.insertBefore(entry.row, currentRow || null);
+  });
+  filterServices();
+}
+
+function filterServices() {
+  const query = serviceSearch.value.trim().toLowerCase();
+  let visibleCount = 0;
+  for (const entry of serviceRows.values()) {
+    const matches = `${entry.name.textContent} ${entry.detail.textContent}`.toLowerCase().includes(query);
+    entry.row.hidden = !matches;
+    if (matches) visibleCount += 1;
+  }
+  let noMatches = serviceList.querySelector('.service-no-matches');
+  if (query && visibleCount === 0 && serviceRows.size) {
+    if (!noMatches) {
+      noMatches = document.createElement('div');
+      noMatches.className = 'empty-state service-no-matches';
+      noMatches.textContent = 'No services match that search.';
+      serviceList.append(noMatches);
+    }
+  } else {
+    noMatches?.remove();
+  }
+}
+
+async function controlService(unit, running) {
+  const action = running ? 'stop' : 'start';
+  try {
+    await request(`/api/services/${encodeURIComponent(unit)}/${action}`, { method: 'POST' });
+    await refresh();
+  } catch (error) {
+    showNotice(error.message);
+  }
+}
+
+async function removeService(unit) {
+  if (!window.confirm(`Remove "${unit}" from the service list? It will keep its current state.`)) return;
+  try {
+    const result = await request(`/api/services/${encodeURIComponent(unit)}`, { method: 'DELETE' });
+    showNotice(result.message);
+    await refresh();
+  } catch (error) {
+    showNotice(error.message);
   }
 }
 
@@ -670,6 +788,10 @@ updateBannerAction.addEventListener('click', async () => {
 document.querySelector('#add-button').addEventListener('click', () => dialog.showModal());
 document.querySelector('#close-dialog').addEventListener('click', () => dialog.close());
 document.querySelector('#cancel-button').addEventListener('click', () => dialog.close());
+document.querySelector('#add-service-button').addEventListener('click', () => serviceDialog.showModal());
+serviceSearch.addEventListener('input', filterServices);
+document.querySelector('#close-service-dialog').addEventListener('click', () => serviceDialog.close());
+document.querySelector('#cancel-service-button').addEventListener('click', () => serviceDialog.close());
 document.querySelector('#close-edit-dialog').addEventListener('click', () => editDialog.close());
 document.querySelector('#cancel-edit-button').addEventListener('click', () => editDialog.close());
 document.querySelector('#add-running-button').addEventListener('click', async () => {
@@ -754,6 +876,22 @@ form.addEventListener('submit', async event => {
     });
     form.reset();
     dialog.close();
+    await refresh();
+  } catch (error) {
+    showNotice(error.message);
+  }
+});
+serviceForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  const values = Object.fromEntries(new FormData(serviceForm));
+  try {
+    await request('/api/services', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unit: values.unit }),
+    });
+    serviceForm.reset();
+    serviceDialog.close();
     await refresh();
   } catch (error) {
     showNotice(error.message);

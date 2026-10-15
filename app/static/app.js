@@ -453,12 +453,12 @@ editRemoveButton.addEventListener('click', () => {
   if (programId && programName) void removeProgram(programId, programName);
 });
 
-async function runCommand(name, args = []) {
+async function runCommand(name, args = [], showProgress = true) {
   await commandsLoaded;
   const command = commandDefinitions.get(name);
   if (!command) throw new Error(`Command /${name} is not available`);
   if (command.requires_confirmation && !window.confirm(`Run /${name}? ${command.description}`)) return null;
-  window.showCommandRunning(name, command.description);
+  if (showProgress) window.showCommandRunning(name, command.description);
   try {
     return await request(`/api/commands/${encodeURIComponent(name)}`, {
       method: 'POST',
@@ -466,7 +466,7 @@ async function runCommand(name, args = []) {
       body: JSON.stringify({ args }),
     });
   } catch (error) {
-    window.showCommandOutput(name, command.description, null, error.message);
+    if (showProgress) window.showCommandOutput(name, command.description, null, error.message);
     throw error;
   }
 }
@@ -844,20 +844,24 @@ function renderRunningProcesses() {
     ? 'No processes match that search.'
     : 'No unregistered running processes were found.';
 }
-async function refreshGlobalIp(retryCount = 0) {
+async function refreshGlobalIp(retryCount = 0, showProgress = false) {
   const button = document.querySelector('#ip-button');
   const globalIp = document.querySelector('#global-ip');
   button.disabled = true;
   setIconButton(button, 'arrows-rotate', 'Refreshing global IP…');
   try {
-    const result = await runCommand('ip');
+    const result = await runCommand('ip', [], showProgress);
     globalIp.textContent = result.global_ip;
     setIconButton(button, 'arrows-rotate', 'Force refresh global IP');
+    if (showProgress) {
+      const command = commandDefinitions.get('ip');
+      window.showCommandOutput('ip', command?.description, result);
+    }
   } catch (error) {
     globalIp.textContent = 'Unavailable';
     setIconButton(button, 'arrows-rotate', 'Retry global IP lookup');
     if (retryCount < 2) {
-      window.setTimeout(() => refreshGlobalIp(retryCount + 1), 1500);
+      window.setTimeout(() => refreshGlobalIp(retryCount + 1, showProgress), 1500);
     } else {
       showNotice(`Could not check global IP: ${error.message}`);
     }
@@ -865,7 +869,7 @@ async function refreshGlobalIp(retryCount = 0) {
     button.disabled = false;
   }
 }
-document.querySelector('#ip-button').addEventListener('click', refreshGlobalIp);
+document.querySelector('#ip-button').addEventListener('click', () => refreshGlobalIp(0, true));
 form.addEventListener('submit', async event => {
   event.preventDefault();
   const values = Object.fromEntries(new FormData(form));

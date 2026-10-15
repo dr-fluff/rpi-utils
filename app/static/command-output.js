@@ -7,6 +7,8 @@
   let message;
   let closeButton;
   let doneButton;
+  let commandIsRunning = false;
+  let dismissedWhileRunning = false;
 
   function initialize() {
     dialog = document.createElement('dialog');
@@ -59,6 +61,9 @@
 
     content.append(heading, description, status, details, message, actions);
     dialog.append(content);
+    dialog.addEventListener('close', () => {
+      if (commandIsRunning) dismissedWhileRunning = true;
+    });
     document.body.append(dialog);
   }
 
@@ -104,6 +109,8 @@
 
   window.showCommandRunning = (name, commandDescription) => {
     if (!dialog) initialize();
+    commandIsRunning = true;
+    dismissedWhileRunning = false;
     title.textContent = `/${name}`;
     description.textContent = commandDescription || 'Command execution';
     status.textContent = 'Running…';
@@ -116,10 +123,8 @@
     const indicator = document.createElement('div');
     indicator.className = 'command-running-indicator';
     indicator.setAttribute('role', 'status');
-    indicator.textContent = 'The command is still running. This will update when it finishes.';
+    indicator.textContent = 'The command is still running. You can close this window; the command will continue.';
     message.append(indicator);
-    closeButton.disabled = true;
-    doneButton.disabled = true;
     if (!dialog.open) dialog.showModal();
   };
 
@@ -131,8 +136,7 @@
     status.textContent = succeeded ? 'Completed successfully' : 'Command failed';
     status.classList.toggle('error', !succeeded);
     status.classList.remove('command-running');
-    closeButton.disabled = false;
-    doneButton.disabled = false;
+    commandIsRunning = false;
 
     const outputFields = succeeded && result && typeof result === 'object'
       ? Object.entries(result).filter(([key, value]) => key !== 'message' && value !== undefined)
@@ -155,6 +159,6 @@
     const showMessage = output && !(succeeded && ['ip', 'start', 'stop'].includes(name) && outputFields.length);
     if (showMessage) renderMessage(output);
     message.hidden = !showMessage;
-    if (!dialog.open) dialog.showModal();
+    if (!dialog.open && !dismissedWhileRunning) dialog.showModal();
   };
 })();

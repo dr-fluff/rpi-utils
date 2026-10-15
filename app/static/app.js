@@ -1,8 +1,10 @@
 const list = document.querySelector('#program-list');
 const serviceList = document.querySelector('#service-list');
-const serviceSearch = document.querySelector('#service-search');
 const serviceDialog = document.querySelector('#service-dialog');
 const serviceForm = document.querySelector('#service-form');
+const availableServiceDialog = document.querySelector('#available-service-dialog');
+const availableServiceList = document.querySelector('#available-service-list');
+const availableServiceError = document.querySelector('#available-service-error');
 const notice = document.querySelector('#notice');
 const dialog = document.querySelector('#program-dialog');
 const form = document.querySelector('#program-form');
@@ -343,27 +345,61 @@ function renderServices(services) {
     const currentRow = serviceList.children[index];
     if (currentRow !== entry.row) serviceList.insertBefore(entry.row, currentRow || null);
   });
-  filterServices();
 }
 
-function filterServices() {
-  const query = serviceSearch.value.trim().toLowerCase();
-  let visibleCount = 0;
-  for (const entry of serviceRows.values()) {
-    const matches = `${entry.name.textContent} ${entry.detail.textContent}`.toLowerCase().includes(query);
-    entry.row.hidden = !matches;
-    if (matches) visibleCount += 1;
-  }
-  let noMatches = serviceList.querySelector('.service-no-matches');
-  if (query && visibleCount === 0 && serviceRows.size) {
-    if (!noMatches) {
-      noMatches = document.createElement('div');
-      noMatches.className = 'empty-state service-no-matches';
-      noMatches.textContent = 'No services match that search.';
-      serviceList.append(noMatches);
+async function refreshAvailableServices() {
+  availableServiceError.hidden = true;
+  availableServiceList.replaceChildren();
+  const loading = document.createElement('p');
+  loading.className = 'field-hint';
+  loading.textContent = 'Loading running services…';
+  availableServiceList.append(loading);
+  try {
+    const { services } = await request('/api/services/available');
+    if (!services.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      const title = document.createElement('strong');
+      title.textContent = 'No services to add';
+      empty.append(title, document.createTextNode('No unregistered running system services were found.'));
+      availableServiceList.replaceChildren(empty);
+      return;
     }
-  } else {
-    noMatches?.remove();
+    availableServiceList.replaceChildren(...services.map(service => {
+      const row = document.createElement('article');
+      row.className = 'docker-available-item';
+      const info = document.createElement('div');
+      const name = document.createElement('strong');
+      name.textContent = service.unit;
+      const details = document.createElement('span');
+      details.textContent = `${service.description} · ${service.status}`;
+      info.append(name, details);
+      const button = document.createElement('button');
+      button.className = 'small-button icon-button';
+      setIconButton(button, 'plus', `Add ${service.unit}`);
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        try {
+          await request('/api/services', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ unit: service.unit }),
+          });
+          showNotice(`Added ${service.unit}.`);
+          await Promise.all([refresh(), refreshAvailableServices()]);
+        } catch (error) {
+          availableServiceError.textContent = error.message;
+          availableServiceError.hidden = false;
+          button.disabled = false;
+        }
+      });
+      row.append(info, button);
+      return row;
+    }));
+  } catch (error) {
+    availableServiceList.replaceChildren();
+    availableServiceError.textContent = error.message;
+    availableServiceError.hidden = false;
   }
 }
 
@@ -795,7 +831,12 @@ document.querySelector('#add-button').addEventListener('click', () => dialog.sho
 document.querySelector('#close-dialog').addEventListener('click', () => dialog.close());
 document.querySelector('#cancel-button').addEventListener('click', () => dialog.close());
 document.querySelector('#add-service-button').addEventListener('click', () => serviceDialog.showModal());
-serviceSearch.addEventListener('input', filterServices);
+document.querySelector('#find-running-services-button').addEventListener('click', () => {
+  availableServiceDialog.showModal();
+  void refreshAvailableServices();
+});
+document.querySelector('#close-available-service-dialog').addEventListener('click', () => availableServiceDialog.close());
+document.querySelector('#done-available-service-dialog').addEventListener('click', () => availableServiceDialog.close());
 document.querySelector('#close-service-dialog').addEventListener('click', () => serviceDialog.close());
 document.querySelector('#cancel-service-button').addEventListener('click', () => serviceDialog.close());
 document.querySelector('#close-edit-dialog').addEventListener('click', () => editDialog.close());

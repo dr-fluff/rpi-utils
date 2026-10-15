@@ -8,12 +8,12 @@
   <link rel="stylesheet" href="/static/vendor/xterm.css">
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
-  <link rel="stylesheet" href="/static/styles.css?v=13">
+  <link rel="stylesheet" href="/static/styles.css?v=14">
   <script src="/static/vendor/xterm.js" defer></script>
   <script src="/static/vendor/addon-fit.js" defer></script>
   <script src="/static/navigation.js?v=1" defer></script>
   <script src="/static/command-output.js?v=3" defer></script>
-  <script src="/static/app.js?v=14" defer></script>
+  <script src="/static/app.js?v=15" defer></script>
 </head>
 <body>
   <section id="login-screen" class="login-screen" hidden>
@@ -79,8 +79,8 @@
       <div class="service-section">
         <div class="section-heading">
           <div><p class="eyebrow">SYSTEMD</p><h2>Services</h2></div>
-          <div class="service-heading-actions">
-            <input id="service-search" class="list-search" type="search" placeholder="Search services" aria-label="Search services">
+          <div class="masthead-actions">
+            <button class="button button-quiet icon-button" id="find-running-services-button" type="button" title="Find running services" aria-label="Find running services"><span class="fa-icon fa-list-check" aria-hidden="true"></span></button>
             <button class="button button-accent icon-button" id="add-service-button" type="button" title="Add system service" aria-label="Add system service"><span class="fa-icon fa-plus" aria-hidden="true"></span></button>
           </div>
         </div>
@@ -121,6 +121,15 @@
       <p class="field-hint">Enter a systemd service unit, such as <code>ssh.service</code>. The <code>.service</code> suffix is optional.</p>
       <div class="dialog-actions"><button type="button" class="button button-quiet icon-button" id="cancel-service-button" title="Cancel" aria-label="Cancel"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button><button class="button button-dark icon-button" type="submit" title="Add service" aria-label="Add service"><span class="fa-icon fa-plus" aria-hidden="true"></span></button></div>
     </form>
+  </dialog>
+  <dialog id="available-service-dialog" class="docker-import-dialog">
+    <div class="docker-import-content">
+      <div class="dialog-heading"><div><p class="eyebrow">SYSTEMD</p><h2>Find running services</h2></div><button type="button" class="close-button icon-button" id="close-available-service-dialog" title="Close" aria-label="Close"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button></div>
+      <p class="field-hint">Add a running system service to Pi Console. Adding it will not change its state.</p>
+      <div id="available-service-list" class="docker-available-list" aria-live="polite"></div>
+      <p id="available-service-error" class="login-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button type="button" class="button button-quiet icon-button" id="done-available-service-dialog" title="Done" aria-label="Done"><span class="fa-icon fa-check" aria-hidden="true"></span></button></div>
+    </div>
   </dialog>
 
   <dialog id="edit-program-dialog">

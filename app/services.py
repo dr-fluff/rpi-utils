@@ -102,6 +102,37 @@ class ServiceManager:
     def list_services(self) -> list[dict]:
         return [self.status(unit) for unit in self._load()]
 
+    def available_running_services(self) -> list[dict]:
+        result = self._run(
+            "list-units",
+            "--type=service",
+            "--state=running",
+            "--no-legend",
+            "--no-pager",
+        )
+        if result.returncode:
+            detail = result.stderr.strip() or result.stdout.strip() or "Could not list running services"
+            raise RuntimeError(detail)
+        registered = set(self._load())
+        available = []
+        for line in result.stdout.splitlines():
+            fields = line.split(maxsplit=4)
+            if len(fields) < 4:
+                continue
+            unit = fields[0]
+            try:
+                unit = self.normalize_unit(unit)
+            except ValueError:
+                continue
+            if unit in registered:
+                continue
+            available.append({
+                "unit": unit,
+                "description": fields[4] if len(fields) > 4 else unit,
+                "status": fields[3],
+            })
+        return available
+
     def control(self, unit: str, action: str) -> dict:
         normalized = self.normalize_unit(unit)
         if normalized not in self._load():

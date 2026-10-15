@@ -767,6 +767,15 @@ async def add_service(service: ServiceInput) -> dict:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
 
+@app.get("/api/services/available")
+async def available_running_services() -> dict:
+    try:
+        available = await asyncio.to_thread(services.available_running_services)
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    return {"services": available}
+
+
 @app.delete("/api/services/{unit}")
 async def remove_service(unit: str) -> dict:
     try:

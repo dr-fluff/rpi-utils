@@ -21,9 +21,39 @@ def allowed_chat_ids() -> set[int]:
     }
 
 
+async def deliver_notifications(
+    application: Application,
+    notification_queue: asyncio.Queue,
+    chat_ids: set[int],
+) -> None:
+    while True:
+        message, result = await notification_queue.get()
+        try:
+            success = True
+
+            for chat_id in sorted(chat_ids):
+                try:
+                    await application.bot.send_message(
+                        chat_id=chat_id,
+                        text=message,
+                    )
+                except (TelegramError, OSError):
+                    logger.exception(
+                        "Could not deliver queued notification to chat %s",
+                        chat_id,
+                    )
+                    success = False
+
+            if not result.done():
+                result.set_result(success)
+        finally:
+            notification_queue.task_done()
+
+
 async def telegram_polling(
     manager: ProgramManager,
     custom_commands: CustomCommandStore,
+    notification_queue: asyncio.Queue,
 ) -> None:
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     allowed = allowed_chat_ids()
@@ -68,10 +98,15 @@ async def telegram_polling(
     if application.updater is not None:
         await application.updater.start_polling()
     menu_task = asyncio.create_task(sync_command_menu(application, custom_commands))
+    notification_task = asyncio.create_task(
+    deliver_notifications(application, notification_queue, allowed)
+)
     try:
         await asyncio.Event().wait()
     finally:
         menu_task.cancel()
+        notification_task.cancel()
+        await asyncio.gather(notification_task, return_exceptions=True)
         await asyncio.gather(menu_task, return_exceptions=True)
         if application.updater is not None:
             await application.updater.stop()

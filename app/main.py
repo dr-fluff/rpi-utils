@@ -145,11 +145,20 @@ class LoginInput(BaseModel):
 class PasswordChangeInput(BaseModel):
     password: str = Field(min_length=MINIMUM_PASSWORD_LENGTH, max_length=1024)
 
+class TelegramNotificationInput(BaseModel):
+    message: str = Field(min_length=1, max_length=4096)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     app.state.telegram_task_lock = asyncio.Lock()
-    app.state.telegram_task = asyncio.create_task(telegram_polling(manager, custom_commands))
+    app.state.telegram_notification_queue = asyncio.Queue()
+    app.state.telegram_task = asyncio.create_task(
+        telegram_polling(
+            manager,
+            custom_commands,
+            app.state.telegram_notification_queue,
+        )
+    )
     yield
     bot_task = app.state.telegram_task
     bot_task.cancel()
@@ -252,6 +261,46 @@ async def restart_telegram_bot(request: Request) -> bool:
             telegram_polling(manager, custom_commands)
         )
     return True
+
+@app.post("/api/internal/telegram/notify")
+async def internal_telegram_notify(
+    payload: TelegramNotificationInput,
+    request: Request,
+):
+    client_host = request.client.host if request.client else None
+
+    if not is_loopback_host(client_host):
+        raise HTTPException(
+            status_code=403,
+            detail="Notifications are only accepted from localhost",
+        )
+
+    bot_task = getattr(request.app.state, "telegram_task", None)
+    if bot_task is None or bot_task.done():
+        raise HTTPException(
+            status_code=503,
+            detail="Telegram service is not running",
+        )
+
+    queue = request.app.state.telegram_notification_queue
+    future = asyncio.get_running_loop().create_future()
+    await queue.put((payload.message, future))
+
+    try:
+        delivered = await asyncio.wait_for(future, timeout=25)
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail="Timed out waiting for Telegram delivery",
+        )
+
+    if not delivered:
+        raise HTTPException(
+            status_code=502,
+            detail="Telegram notification delivery failed",
+        )
+
+    return {"ok": True}
 
 
 @app.get("/api/auth/status")

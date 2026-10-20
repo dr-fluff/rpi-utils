@@ -178,6 +178,12 @@ class LocalOnlyMiddleware(BaseHTTPMiddleware):
             return PlainTextResponse("Private network access only", status_code=403)
         client_host = request.client.host if request.client else None
         loopback_client = is_loopback_host(client_host)
+
+        local_notification_endpoint = (
+            request.url.path == "/api/internal/telegram/notify"
+            and loopback_client
+        )
+
         password = configured_password()
         if password is None and not loopback_client:
             return JSONResponse(
@@ -204,14 +210,24 @@ class LocalOnlyMiddleware(BaseHTTPMiddleware):
                 valid_origin = False
             if not valid_origin:
                 return PlainTextResponse("Private network access only", status_code=403)
+                local_notification_endpoint = (
+        request.url.path == "/api/internal/telegram/notify"
+            and loopback_client
+        )
         public_paths = {"/", "/commands", "/api/auth/status", "/api/auth/login"}
-        if password and request.url.path not in public_paths and not request.url.path.startswith("/static/"):
+        if (
+            password
+            and request.url.path not in public_paths
+            and not request.url.path.startswith("/static/")
+            and not local_notification_endpoint
+        ):
             token = request.cookies.get(SESSION_COOKIE)
             if not valid_session(password, token):
                 return JSONResponse({"detail": "Authentication required"}, status_code=401)
         if (
             password
             and password_change_required()
+            and not local_notification_endpoint
             and request.url.path not in {
                 "/",
                 "/commands",
@@ -252,14 +268,22 @@ async def restart_telegram_bot(request: Request) -> bool:
     lock = getattr(request.app.state, "telegram_task_lock", None)
     if lock is None:
         return False
+
     async with lock:
         previous_task = getattr(request.app.state, "telegram_task", None)
+
         if previous_task is not None and not previous_task.done():
             previous_task.cancel()
             await asyncio.gather(previous_task, return_exceptions=True)
+
         request.app.state.telegram_task = asyncio.create_task(
-            telegram_polling(manager, custom_commands)
+            telegram_polling(
+                manager,
+                custom_commands,
+                request.app.state.telegram_notification_queue,
+            )
         )
+
     return True
 
 @app.post("/api/internal/telegram/notify")

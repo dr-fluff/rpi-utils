@@ -9,6 +9,7 @@ COMMAND_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 SCRIPT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\.(?:sh|bash|py)$")
 MAX_COMMAND_TIMEOUT = 300
 MAX_SCRIPT_BYTES = 65536
+MAX_SCRIPT_CONFIG_BYTES = 65536
 DEFAULT_COMMAND_ICON = "bolt"
 ICON_CATALOG_PATH = Path(__file__).parent / "static" / "vendor" / "fa-solid-icons.json"
 COMMAND_ICONS = {icon[0] for icon in json.loads(ICON_CATALOG_PATH.read_text())}
@@ -38,6 +39,7 @@ class UserSettingsStore:
             "default_timeout_seconds": 60,
             "custom_commands": [],
             "other_settings": {},
+            "script_config": {},
         }
 
     def _load(self) -> dict:
@@ -62,6 +64,8 @@ class UserSettingsStore:
         defaults.update(settings)
         if not isinstance(defaults["custom_commands"], list):
             raise RuntimeError("The custom_commands setting must be a JSON list")
+        if not isinstance(defaults["script_config"], dict):
+            raise RuntimeError("The script_config setting must be a JSON object")
         return defaults
 
     def _save(self, settings: dict) -> None:
@@ -84,6 +88,7 @@ class UserSettingsStore:
             "default_timeout_seconds",
             "custom_commands",
             "other_settings",
+            "script_config",
         }
         if (
             not required_settings.issubset(persisted)
@@ -91,9 +96,20 @@ class UserSettingsStore:
         ):
             settings["scripts_directory"] = str(scripts_directory)
             self._save(settings)
-        return {**settings, "scripts_directory": str(scripts_directory)}
+        script_config = self._validated_script_config(settings["script_config"])
+        self._write_script_config(scripts_directory, script_config)
+        return {
+            **settings,
+            "scripts_directory": str(scripts_directory),
+            "script_config": script_config,
+        }
 
-    def update(self, scripts_directory: str, default_timeout_seconds: int) -> dict:
+    def update(
+        self,
+        scripts_directory: str,
+        default_timeout_seconds: int,
+        script_config: dict | None = None,
+    ) -> dict:
         if not 1 <= default_timeout_seconds <= MAX_COMMAND_TIMEOUT:
             raise ValueError(f"Default timeout must be between 1 and {MAX_COMMAND_TIMEOUT} seconds")
         settings = self._load()
@@ -101,8 +117,31 @@ class UserSettingsStore:
         resolved_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         settings["scripts_directory"] = str(resolved_directory)
         settings["default_timeout_seconds"] = default_timeout_seconds
+        if script_config is not None:
+            settings["script_config"] = self._validated_script_config(script_config)
         self._save(settings)
         return self.get()
+
+    def script_config_path(self) -> Path:
+        return self.scripts_directory() / "script-config.json"
+
+    @staticmethod
+    def _validated_script_config(script_config: dict) -> dict:
+        try:
+            encoded = json.dumps(script_config, indent=2, allow_nan=False)
+        except (TypeError, ValueError) as error:
+            raise ValueError("Script configuration must contain valid JSON values") from error
+        if len(encoded.encode("utf-8")) > MAX_SCRIPT_CONFIG_BYTES:
+            raise ValueError(f"Script configuration must be {MAX_SCRIPT_CONFIG_BYTES} bytes or smaller")
+        return script_config
+
+    @staticmethod
+    def _write_script_config(scripts_directory: Path, script_config: dict) -> None:
+        config_path = scripts_directory / "script-config.json"
+        temporary_path = scripts_directory / ".script-config.json.tmp"
+        temporary_path.write_text(json.dumps(script_config, indent=2, allow_nan=False) + "\n")
+        temporary_path.chmod(0o600)
+        temporary_path.replace(config_path)
 
     def scripts_directory(self) -> Path:
         return Path(self.get()["scripts_directory"])
@@ -348,7 +387,10 @@ class CustomCommandStore:
         }
 
 
-def run_custom_command(command: dict) -> dict:
+def run_custom_command(command: dict, script_config_file: Path | None = None) -> dict:
+    environment = os.environ.copy()
+    if script_config_file is not None:
+        environment["RPI_UTILS_SCRIPT_CONFIG_FILE"] = str(script_config_file)
     try:
         result = subprocess.run(
             command["command"],
@@ -356,6 +398,7 @@ def run_custom_command(command: dict) -> dict:
             text=True,
             timeout=command["timeout_seconds"],
             check=False,
+            env=environment,
         )
     except subprocess.TimeoutExpired as error:
         raise RuntimeError(

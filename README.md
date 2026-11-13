@@ -104,6 +104,18 @@ Use the shared navigation on every page to open the dashboard, **Commands**, or 
 
 Each custom command can be enabled for the Telegram bot independently. Commands requiring dashboard confirmation cannot run through Telegram. Settings and custom commands are stored outside the app checkout in `~/.config/rpi-utils/settings.json`; the file includes the scripts directory, default script timeout, custom commands, and an `other_settings` object reserved for future options. Set `RPI_UTILS_SETTINGS_FILE` to use another settings file. Existing `commands.json` custom command lists are imported the first time settings are initialized.
 
+The **Settings** page also stores a JSON object for script-specific configuration. Pi Console writes it with private permissions to `script-config.json` in the configured scripts directory and sets `RPI_UTILS_SCRIPT_CONFIG_FILE` when running a custom command. Scripts can read the path from that environment variable and parse the JSON. For Python scripts:
+
+```python
+import json
+import os
+
+with open(os.environ["RPI_UTILS_SCRIPT_CONFIG_FILE"], encoding="utf-8") as config_file:
+    config = json.load(config_file)
+```
+
+The config is available to custom commands run from the dashboard or Telegram.
+
 The built-in registry provides `/help`, `/ip` (global and local addresses), `/status` (running programs), `/start program-id`, `/stop program-id`, `/restart` (reboot the Pi), and `/update` (install the latest published release and system upgrades). Program-row Start/Stop buttons use the same dispatcher. The Telegram bot does not start unless both the bot token and allowed chat IDs are configured. The installer provisions root-owned reboot, system-upgrade, and restricted system-service helpers; the service account receives passwordless sudo only for those helpers. Re-run `sudo ./install.sh` on an existing installation to enable `/restart` and repository service management. Keep the env file private (`chmod 600 ~/.config/rpi-utils/env`).
 
 ## Install as a service

@@ -192,8 +192,8 @@ async function refresh() {
   refreshInProgress = true;
   try {
     const { programs, services } = await request('/api/status');
-    document.querySelector('#program-count').textContent = programs.length;
-    document.querySelector('#active-count').textContent = programs.filter(program => program.running).length;
+    document.querySelector('#program-count').textContent = `${programs.filter(program => program.running).length}/${programs.length}`;
+    document.querySelector('#service-count').textContent = `${services.filter(service => service.running).length}/${services.length}`;
     if (!programs.length) {
       for (const entry of programRows.values()) entry.row.remove();
       programRows.clear();
@@ -782,9 +782,12 @@ async function refreshDockerProjects() {
       request('/api/docker/projects'),
       request('/api/docker/containers'),
     ]);
+    const allContainers = [...projects.flatMap(project => project.containers), ...containers];
+    document.querySelector('#container-count').textContent = `${allContainers.filter(container => container.state === 'running').length}/${allContainers.length}`;
     renderDockerProjects(projects, containers.length > 0);
     dockerProjectList.append(...renderImportedContainers(containers));
   } catch (error) {
+    document.querySelector('#container-count').textContent = '—';
     const unavailable = document.createElement('div');
     unavailable.className = 'empty-state docker-unavailable';
     const title = document.createElement('strong');

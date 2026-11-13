@@ -7,9 +7,9 @@
   <title>Settings · Pi Console</title>
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
-  <link rel="stylesheet" href="/static/styles.css?v=9">
+  <link rel="stylesheet" href="/static/styles.css?v=12">
   <script src="/static/navigation.js?v=1" defer></script>
-  <script src="/static/settings.js?v=3" defer></script>
+  <script src="/static/settings.js?v=6" defer></script>
 </head>
 <body>
   <div id="site-navigation" data-page="settings"></div>
@@ -18,23 +18,28 @@
       <div><p class="eyebrow">CONTROL SURFACE / DEVICE CONFIGURATION</p><h1>Device<br><span>settings.</span></h1></div>
     </section>
     <p class="commands-intro">Configure private script storage and the Telegram bot that controls this device.</p>
+    <div class="settings-page-actions">
+      <button id="settings-back-button" class="button button-quiet icon-button" type="button" title="Back" aria-label="Back"><span class="fa-icon fa-arrow-left" aria-hidden="true"></span></button>
+      <button id="settings-cancel-button" class="button button-quiet icon-button" type="button" title="Discard changes" aria-label="Discard changes" hidden><span class="fa-icon fa-xmark" aria-hidden="true"></span></button>
+      <button class="button button-dark icon-button" type="submit" form="settings-form" title="Save settings" aria-label="Save settings"><span class="fa-icon fa-floppy-disk" aria-hidden="true"></span></button>
+    </div>
 
-    <section class="commands-group" aria-labelledby="device-settings-heading">
-      <div class="section-heading"><div><p class="eyebrow">SCRIPTS</p><h2 id="device-settings-heading">Device settings</h2></div></div>
-      <form id="settings-form" class="settings-form">
+    <form id="settings-form" class="settings-form">
+      <section class="commands-group" aria-labelledby="device-settings-heading">
+        <div class="section-heading"><div><p class="eyebrow">SCRIPTS</p><h2 id="device-settings-heading">Device settings</h2></div></div>
         <label for="scripts-directory-input">Scripts directory</label>
         <input id="scripts-directory-input" name="scripts_directory" required maxlength="1024" spellcheck="false">
         <p class="field-hint">Use an absolute path outside the Git checkout. Pi Console creates the directory if it does not exist. Commands using saved scripts look for their script by filename in this directory.</p>
         <label for="default-timeout-input">Default script timeout (seconds)</label>
         <input id="default-timeout-input" name="default_timeout_seconds" type="number" min="1" max="300" required>
-        <div class="dialog-actions"><button class="button button-dark icon-button" type="submit" title="Save device settings" aria-label="Save device settings"><span class="fa-icon fa-floppy-disk" aria-hidden="true"></span></button></div>
-      </form>
-    </section>
+        <label for="script-config-input">Script configuration (JSON)</label>
+        <textarea id="script-config-input" name="script_config" class="script-config-input" maxlength="65536" spellcheck="false" placeholder='{"device_name":"raspberry-pi"}'></textarea>
+        <p class="field-hint">Scripts receive the private config file path in <code>RPI_UTILS_SCRIPT_CONFIG_FILE</code>. The file contains this JSON object.</p>
+      </section>
 
-    <section class="commands-group" aria-labelledby="telegram-settings-heading">
-      <div class="section-heading"><div><p class="eyebrow">REMOTE CONTROL</p><h2 id="telegram-settings-heading">Telegram</h2></div><span id="telegram-status" class="command-badge">Checking configuration</span></div>
-      <p class="settings-description">The bot token and authorized chat IDs are saved in the private service environment file. The saved token is never sent back to this page.</p>
-      <form id="telegram-settings-form" class="settings-form">
+      <section class="commands-group" aria-labelledby="telegram-settings-heading">
+        <div class="section-heading"><div><p class="eyebrow">REMOTE CONTROL</p><h2 id="telegram-settings-heading">Telegram</h2></div><span id="telegram-status" class="command-badge">Checking configuration</span></div>
+        <p class="settings-description">The bot token and authorized chat IDs are saved in the private service environment file. The saved token is never sent back to this page.</p>
         <label for="telegram-bot-token">Bot token</label>
         <input id="telegram-bot-token" name="bot_token" type="password" maxlength="256" autocomplete="new-password" placeholder="Enter a token to set or replace it">
         <p id="telegram-token-status" class="field-hint"></p>
@@ -43,9 +48,8 @@
         <textarea id="telegram-chat-ids" name="allowed_chat_ids" class="telegram-chat-ids" maxlength="4096" spellcheck="false" placeholder="One numeric chat ID per line, or separate IDs with commas"></textarea>
         <p class="field-hint">Only these Telegram chats can control the device. Find your chat ID using a trusted Telegram bot, then enter each ID on its own line or separate them with commas.</p>
         <p id="telegram-form-error" class="login-error" role="alert" hidden></p>
-        <div class="dialog-actions"><button class="button button-dark icon-button" type="submit" title="Save Telegram settings" aria-label="Save Telegram settings"><span class="fa-icon fa-floppy-disk" aria-hidden="true"></span></button></div>
-      </form>
-    </section>
+      </section>
+    </form>
 
     <section id="account-settings" class="commands-group" aria-labelledby="account-settings-heading">
       <div class="section-heading"><div><p class="eyebrow">ACCOUNT</p><h2 id="account-settings-heading">Password and sign-in</h2></div></div>

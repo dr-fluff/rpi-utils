@@ -8,6 +8,7 @@ import shlex
 import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 from urllib.error import HTTPError, URLError
 from urllib.request import Request as URLRequest
@@ -127,6 +128,7 @@ class CustomCommandInput(BaseModel):
 class UserSettingsInput(BaseModel):
     scripts_directory: str = Field(min_length=1, max_length=1024)
     default_timeout_seconds: int = Field(ge=1, le=300)
+    script_config: dict[str, Any] | None = None
 
 
 class TelegramSettingsInput(BaseModel):
@@ -461,7 +463,8 @@ async def available_commands() -> dict:
 
 
 @app.get("/api/settings")
-async def get_settings() -> dict:
+async def get_settings(response: Response) -> dict:
+    response.headers["Cache-Control"] = "no-store"
     try:
         settings = user_settings.get()
     except (OSError, RuntimeError, ValueError) as error:
@@ -469,13 +472,19 @@ async def get_settings() -> dict:
     return {
         "scripts_directory": settings["scripts_directory"],
         "default_timeout_seconds": settings["default_timeout_seconds"],
+        "script_config": settings["script_config"],
     }
 
 
 @app.put("/api/settings")
-async def update_settings(settings: UserSettingsInput) -> dict:
+async def update_settings(settings: UserSettingsInput, response: Response) -> dict:
+    response.headers["Cache-Control"] = "no-store"
     try:
-        updated = user_settings.update(settings.scripts_directory, settings.default_timeout_seconds)
+        updated = user_settings.update(
+            settings.scripts_directory,
+            settings.default_timeout_seconds,
+            settings.script_config,
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except RuntimeError as error:
@@ -485,6 +494,7 @@ async def update_settings(settings: UserSettingsInput) -> dict:
     return {
         "scripts_directory": updated["scripts_directory"],
         "default_timeout_seconds": updated["default_timeout_seconds"],
+        "script_config": updated["script_config"],
     }
 
 

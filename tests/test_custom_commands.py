@@ -145,6 +145,7 @@ class CustomCommandApiTests(unittest.TestCase):
     def test_settings_and_script_api_create_private_script_directory(self):
         response = self.client.get("/api/settings")
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["script_config"], {})
         script_directory = Path(response.json()["scripts_directory"])
         self.assertTrue(script_directory.is_dir())
 
@@ -159,6 +160,43 @@ class CustomCommandApiTests(unittest.TestCase):
         self.assertEqual(listed.json()["scripts"], [{"name": "restart-router.sh"}])
         loaded = self.client.get("/api/scripts/restart-router.sh")
         self.assertIn("router restarted", loaded.json()["content"])
+
+    def test_custom_script_can_read_private_script_config(self):
+        settings = self.client.get("/api/settings").json()
+        script_config = {"device": {"name": "edge-pi"}}
+        updated = self.client.put(
+            "/api/settings",
+            json={
+                "scripts_directory": settings["scripts_directory"],
+                "default_timeout_seconds": settings["default_timeout_seconds"],
+                "script_config": script_config,
+            },
+        )
+        self.assertEqual(updated.status_code, 200)
+
+        config_path = Path(settings["scripts_directory"]) / "script-config.json"
+        self.assertEqual(json.loads(config_path.read_text()), script_config)
+        self.assertEqual(config_path.stat().st_mode & 0o777, 0o600)
+
+        script = """#!/usr/bin/env python3
+import json
+import os
+with open(os.environ["RPI_UTILS_SCRIPT_CONFIG_FILE"], encoding="utf-8") as config_file:
+    print(json.load(config_file)["device"]["name"])
+"""
+        self.client.put("/api/scripts/read-config.py", json={"content": script})
+        self.client.post(
+            "/api/custom-commands",
+            json={
+                "name": "read_config",
+                "description": "Read script config",
+                "script_name": "read-config.py",
+            },
+        )
+        result = self.client.post("/api/commands/read_config", json={"args": []})
+
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.json()["message"], "edge-pi")
 
     def test_script_directory_cannot_be_inside_checkout(self):
         response = self.client.put(

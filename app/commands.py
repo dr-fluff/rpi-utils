@@ -120,7 +120,12 @@ async def run_command(
         if source == "telegram" and custom["requires_confirmation"]:
             raise CommandError(f"/{name} requires confirmation; run it from the dashboard")
         try:
-            return await asyncio.to_thread(run_custom_command, custom)
+            script_config_file = (
+                custom_commands.settings.script_config_path()
+                if custom_commands is not None
+                else None
+            )
+            return await asyncio.to_thread(run_custom_command, custom, script_config_file)
         except RuntimeError as error:
             raise CommandError(str(error)) from error
     arguments = args or []

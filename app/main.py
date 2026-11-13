@@ -48,7 +48,7 @@ from app.docker_projects import (
     DockerUnavailableError,
 )
 from app.programs import ProgramManager
-from app.services import ServiceManager
+from app.services import ServiceManager, ServiceUnitManager
 from app.terminal import terminal_socket
 from app.telegram.bot import telegram_polling
 from app.telegram.settings import TelegramSettingsStore
@@ -60,6 +60,7 @@ manager = ProgramManager()
 services = ServiceManager()
 docker_projects = DockerProjectManager()
 user_settings = UserSettingsStore()
+service_units = ServiceUnitManager(user_settings.scripts_directory)
 custom_commands = CustomCommandStore(user_settings)
 telegram_settings = TelegramSettingsStore()
 
@@ -840,6 +841,46 @@ async def add_service(service: ServiceInput) -> dict:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
 
+@app.get("/api/service-units")
+async def list_service_units() -> dict:
+    try:
+        return {"services": await asyncio.to_thread(service_units.list_available)}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except (OSError, RuntimeError) as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+
+@app.post("/api/service-units/{unit}")
+async def install_service_unit(unit: str) -> dict:
+    try:
+        await asyncio.to_thread(service_units.install, unit)
+        if not await asyncio.to_thread(services.is_registered, unit):
+            await asyncio.to_thread(services.add, unit)
+        return await asyncio.to_thread(services.status, unit)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+
+@app.delete("/api/service-units/{unit}")
+async def remove_service_unit(unit: str) -> dict:
+    try:
+        await asyncio.to_thread(service_units.remove, unit)
+        if await asyncio.to_thread(services.is_registered, unit):
+            await asyncio.to_thread(services.remove, unit)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    return {"message": f"{unit} stopped, disabled, and uninstalled."}
+
+
 @app.get("/api/services/available")
 async def available_running_services() -> dict:
     try:
@@ -847,6 +888,19 @@ async def available_running_services() -> dict:
     except RuntimeError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
     return {"services": available}
+
+
+@app.get("/api/services/{unit}/status-output")
+async def service_status_output(unit: str) -> dict:
+    try:
+        output = await asyncio.to_thread(services.status_output, unit)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    return {"unit": unit, "output": output}
 
 
 @app.delete("/api/services/{unit}")

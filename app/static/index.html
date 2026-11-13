@@ -81,6 +81,7 @@
           <div><p class="eyebrow">SYSTEMD</p><h2>Services</h2></div>
           <div class="masthead-actions">
             <button class="button button-quiet icon-button" id="find-running-services-button" type="button" title="Find running services" aria-label="Find running services"><span class="fa-icon fa-list-check" aria-hidden="true"></span></button>
+            <button class="button button-quiet icon-button" id="manage-repo-services-button" type="button" title="Manage service files from scripts" aria-label="Manage service files from scripts"><span class="fa-icon fa-file-import" aria-hidden="true"></span></button>
             <button class="button button-accent icon-button" id="add-service-button" type="button" title="Add system service" aria-label="Add system service"><span class="fa-icon fa-plus" aria-hidden="true"></span></button>
           </div>
         </div>
@@ -129,6 +130,15 @@
       <div id="available-service-list" class="docker-available-list" aria-live="polite"></div>
       <p id="available-service-error" class="login-error" role="alert" hidden></p>
       <div class="dialog-actions"><button type="button" class="button button-quiet icon-button" id="done-available-service-dialog" title="Done" aria-label="Done"><span class="fa-icon fa-check" aria-hidden="true"></span></button></div>
+    </div>
+  </dialog>
+  <dialog id="repo-service-dialog" class="docker-import-dialog">
+    <div class="docker-import-content">
+      <div class="dialog-heading"><div><p class="eyebrow">SCRIPT REPOSITORY</p><h2>Service files</h2></div><button type="button" class="close-button icon-button" id="close-repo-service-dialog" title="Close" aria-label="Close"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button></div>
+      <p class="field-hint">Install starts and enables a system service. Uninstall stops it, disables it, and removes its installed unit file.</p>
+      <div id="repo-service-list" class="docker-available-list" aria-live="polite"></div>
+      <p id="repo-service-error" class="login-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button type="button" class="button button-quiet icon-button" id="done-repo-service-dialog" title="Done" aria-label="Done"><span class="fa-icon fa-check" aria-hidden="true"></span></button></div>
     </div>
   </dialog>
 

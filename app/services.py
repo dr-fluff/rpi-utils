@@ -2,10 +2,14 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
+from typing import Callable
 
 
 _UNIT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@-]{0,255}$")
+_SERVICE_FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@-]{0,255}\.service$")
+SERVICE_MANAGER_HELPER = "/usr/local/sbin/rpi-utils-service-manager"
 
 
 def config_path() -> Path:
@@ -99,8 +103,21 @@ class ServiceManager:
             "error": (result.stderr.strip() or None) if result.returncode and not properties else None,
         }
 
+    def status_output(self, unit: str) -> str:
+        normalized = self.normalize_unit(unit)
+        if normalized not in self._load():
+            raise KeyError("Service not found")
+        result = self._run("status", "--full", normalized)
+        output = result.stdout.strip()
+        if not output:
+            output = result.stderr.strip() or "systemctl returned no service status output"
+        return output
+
     def list_services(self) -> list[dict]:
         return [self.status(unit) for unit in self._load()]
+
+    def is_registered(self, unit: str) -> bool:
+        return self.normalize_unit(unit) in self._load()
 
     def available_running_services(self) -> list[dict]:
         result = self._run(
@@ -144,3 +161,87 @@ class ServiceManager:
             detail = result.stderr.strip() or result.stdout.strip() or f"Could not {action} service"
             raise RuntimeError(detail)
         return self.status(normalized)
+
+
+class ServiceUnitManager:
+    """Install and remove service units supplied in the user's scripts directory."""
+
+    def __init__(
+        self,
+        scripts_directory: Callable[[], Path],
+        helper_path: str = SERVICE_MANAGER_HELPER,
+    ) -> None:
+        self.scripts_directory = scripts_directory
+        self.helper_path = helper_path
+
+    def _service_directory(self) -> Path:
+        service_directory = self.scripts_directory() / "service"
+        if service_directory.is_symlink():
+            raise ValueError("Service directory must not be a symbolic link")
+        return service_directory
+
+    def _run_helper(self, *args: str) -> subprocess.CompletedProcess[str]:
+        if not sys.platform.startswith("linux"):
+            raise RuntimeError("Repository system service management is only available on Linux")
+        try:
+            result = subprocess.run(
+                ["sudo", "-n", self.helper_path, *args],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        except FileNotFoundError as error:
+            raise RuntimeError("The privileged service manager is not installed") from error
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError("The privileged service manager timed out") from error
+        if result.returncode:
+            detail = result.stderr.strip() or result.stdout.strip() or "Service operation failed"
+            raise RuntimeError(detail)
+        return result
+
+    def list_available(self) -> list[dict]:
+        service_directory = self._service_directory()
+        available: set[str] = set()
+        if service_directory.exists():
+            if not service_directory.is_dir():
+                raise ValueError("Service path must be a directory")
+            available = {
+                path.name
+                for path in service_directory.iterdir()
+                if _SERVICE_FILE.fullmatch(path.name) and path.is_file() and not path.is_symlink()
+            }
+        result = self._run_helper("list")
+        try:
+            installed = json.loads(result.stdout)
+        except json.JSONDecodeError as error:
+            raise RuntimeError("The privileged service manager returned invalid data") from error
+        if not isinstance(installed, list) or not all(
+            isinstance(unit, str) and _SERVICE_FILE.fullmatch(unit) for unit in installed
+        ):
+            raise RuntimeError("The privileged service manager returned invalid service names")
+        installed_units = set(installed)
+        return [
+            {
+                "unit": unit,
+                "installed": unit in installed_units,
+                "source_available": unit in available,
+            }
+            for unit in sorted(available | installed_units)
+        ]
+
+    def install(self, unit: str) -> str:
+        if not _SERVICE_FILE.fullmatch(unit):
+            raise ValueError("Choose a .service file from the scripts service directory")
+        service_directory = self._service_directory()
+        source = service_directory / unit
+        if source.is_symlink() or not source.is_file():
+            raise KeyError("Service file not found")
+        self._run_helper("install", str(service_directory.resolve()), unit)
+        return unit
+
+    def remove(self, unit: str) -> str:
+        if not _SERVICE_FILE.fullmatch(unit):
+            raise ValueError("Invalid service unit name")
+        self._run_helper("remove", unit)
+        return unit

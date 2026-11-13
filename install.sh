@@ -16,6 +16,7 @@ SERVICE_HOME="$(getent passwd "${SERVICE_USER}" | cut -d: -f6)"
 PYTHON="$(command -v python3)"
 UPGRADE_HELPER="/usr/local/sbin/rpi-utils-system-upgrade"
 REBOOT_HELPER="/usr/local/sbin/rpi-utils-reboot"
+SERVICE_MANAGER_HELPER="/usr/local/sbin/rpi-utils-service-manager"
 SUDOERS_FILE="/etc/sudoers.d/rpi-utils-updater"
 AUTH_ENV_FILE="${SERVICE_HOME}/.config/rpi-utils/env"
 USER_CONFIG_DIR="${SERVICE_HOME}/.config/rpi-utils"
@@ -90,10 +91,11 @@ chown -R "${SERVICE_USER}" "${PROJECT_DIR}/.venv"
 progress "Installing restricted system upgrade and reboot helpers"
 install -o root -g root -m 0755 "${PROJECT_DIR}/scripts/rpi-utils-system-upgrade" "${UPGRADE_HELPER}"
 install -o root -g root -m 0755 "${PROJECT_DIR}/scripts/rpi-utils-reboot" "${REBOOT_HELPER}"
+install -o root -g root -m 0755 "${PROJECT_DIR}/scripts/rpi-utils-service-manager" "${SERVICE_MANAGER_HELPER}"
 SUDOERS_TEMP="$(mktemp)"
 trap 'rm -f "${SUDOERS_TEMP}"' EXIT
-printf '%s ALL=(root) NOPASSWD: %s, %s\n' \
-	"${SERVICE_USER}" "${UPGRADE_HELPER}" "${REBOOT_HELPER}" > "${SUDOERS_TEMP}"
+printf '%s ALL=(root) NOPASSWD: %s, %s, %s\n' \
+	"${SERVICE_USER}" "${UPGRADE_HELPER}" "${REBOOT_HELPER}" "${SERVICE_MANAGER_HELPER}" > "${SUDOERS_TEMP}"
 visudo -cf "${SUDOERS_TEMP}"
 install -o root -g root -m 0440 "${SUDOERS_TEMP}" "${SUDOERS_FILE}"
 

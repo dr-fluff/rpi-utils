@@ -5,6 +5,9 @@ const serviceForm = document.querySelector('#service-form');
 const availableServiceDialog = document.querySelector('#available-service-dialog');
 const availableServiceList = document.querySelector('#available-service-list');
 const availableServiceError = document.querySelector('#available-service-error');
+const repoServiceDialog = document.querySelector('#repo-service-dialog');
+const repoServiceList = document.querySelector('#repo-service-list');
+const repoServiceError = document.querySelector('#repo-service-error');
 const notice = document.querySelector('#notice');
 const dialog = document.querySelector('#program-dialog');
 const form = document.querySelector('#program-form');
@@ -330,7 +333,28 @@ function renderServices(services) {
       setIconButton(removeButton, 'trash', 'Remove service');
       removeButton.addEventListener('click', () => removeService(service.unit));
       actions.append(state, button, removeButton);
-      row.append(main, actions);
+      const statusDetails = document.createElement('details');
+      statusDetails.className = 'service-status-details';
+      const statusSummary = document.createElement('summary');
+      statusSummary.className = 'small-button icon-button';
+      setIconButton(statusSummary, 'list-check', `Show systemctl status for ${service.unit}`);
+      const statusOutput = document.createElement('pre');
+      statusOutput.className = 'service-status-output';
+      statusOutput.textContent = 'Expand to load systemctl status.';
+      statusDetails.append(statusSummary, statusOutput);
+      statusDetails.addEventListener('toggle', async () => {
+        if (!statusDetails.open || statusDetails.dataset.loaded === 'true') return;
+        statusDetails.dataset.loaded = 'true';
+        statusOutput.textContent = 'Loading systemctl status…';
+        try {
+          const result = await request(`/api/services/${encodeURIComponent(service.unit)}/status-output`);
+          statusOutput.textContent = result.output;
+        } catch (error) {
+          statusOutput.textContent = error.message;
+          statusDetails.dataset.loaded = 'false';
+        }
+      });
+      row.append(main, actions, statusDetails);
       entry = { row, indicator, name, detail, state, button };
       serviceRows.set(service.unit, entry);
     }
@@ -400,6 +424,72 @@ async function refreshAvailableServices() {
     availableServiceList.replaceChildren();
     availableServiceError.textContent = error.message;
     availableServiceError.hidden = false;
+  }
+}
+
+async function refreshRepoServices() {
+  repoServiceError.hidden = true;
+  repoServiceList.replaceChildren();
+  const loading = document.createElement('p');
+  loading.className = 'field-hint';
+  loading.textContent = 'Loading service files…';
+  repoServiceList.append(loading);
+  try {
+    const { services } = await request('/api/service-units');
+    if (!services.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      const title = document.createElement('strong');
+      title.textContent = 'No service files found';
+      empty.append(title, document.createTextNode('Add .service files to the scripts service directory.'));
+      repoServiceList.replaceChildren(empty);
+      return;
+    }
+    repoServiceList.replaceChildren(...services.map(service => {
+      const row = document.createElement('article');
+      row.className = 'docker-available-item';
+      const info = document.createElement('div');
+      const name = document.createElement('strong');
+      name.textContent = service.unit;
+      const details = document.createElement('span');
+      details.textContent = service.installed
+        ? 'Installed by Pi Console'
+        : service.source_available ? 'Available to install' : 'Source file is no longer available';
+      info.append(name, details);
+      const button = document.createElement('button');
+      button.className = 'small-button icon-button';
+      button.disabled = !service.installed && !service.source_available;
+      setIconButton(
+        button,
+        service.installed ? 'trash' : 'plus',
+        service.installed ? `Uninstall ${service.unit}` : `Install ${service.unit}`,
+      );
+      button.addEventListener('click', async () => {
+        const action = service.installed ? 'remove' : 'install';
+        const confirmed = service.installed
+          ? window.confirm(`Stop, disable, and uninstall ${service.unit}?`)
+          : window.confirm(`Install and start ${service.unit} as a system service? Review its unit file before continuing.`);
+        if (!confirmed) return;
+        button.disabled = true;
+        try {
+          await request(`/api/service-units/${encodeURIComponent(service.unit)}`, {
+            method: action === 'install' ? 'POST' : 'DELETE',
+          });
+          showNotice(action === 'install' ? `Installed ${service.unit}.` : `Uninstalled ${service.unit}.`);
+          await Promise.all([refresh(), refreshRepoServices()]);
+        } catch (error) {
+          repoServiceError.textContent = error.message;
+          repoServiceError.hidden = false;
+          button.disabled = false;
+        }
+      });
+      row.append(info, button);
+      return row;
+    }));
+  } catch (error) {
+    repoServiceList.replaceChildren();
+    repoServiceError.textContent = error.message;
+    repoServiceError.hidden = false;
   }
 }
 
@@ -835,8 +925,14 @@ document.querySelector('#find-running-services-button').addEventListener('click'
   availableServiceDialog.showModal();
   void refreshAvailableServices();
 });
+document.querySelector('#manage-repo-services-button').addEventListener('click', () => {
+  repoServiceDialog.showModal();
+  void refreshRepoServices();
+});
 document.querySelector('#close-available-service-dialog').addEventListener('click', () => availableServiceDialog.close());
 document.querySelector('#done-available-service-dialog').addEventListener('click', () => availableServiceDialog.close());
+document.querySelector('#close-repo-service-dialog').addEventListener('click', () => repoServiceDialog.close());
+document.querySelector('#done-repo-service-dialog').addEventListener('click', () => repoServiceDialog.close());
 document.querySelector('#close-service-dialog').addEventListener('click', () => serviceDialog.close());
 document.querySelector('#cancel-service-button').addEventListener('click', () => serviceDialog.close());
 document.querySelector('#close-edit-dialog').addEventListener('click', () => editDialog.close());

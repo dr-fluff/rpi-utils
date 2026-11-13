@@ -1,0 +1,211 @@
+#!/usr/bin/env python3
+import json
+import hashlib
+import os
+import pwd
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+UNIT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@-]{0,255}\.service$")
+SYSTEMD_DIRECTORY = Path("/etc/systemd/system")
+STATE_DIRECTORY = Path("/var/lib/rpi-utils")
+STATE_FILE = STATE_DIRECTORY / "managed-services.json"
+MAX_UNIT_BYTES = 65536
+
+
+def fail(message):
+    raise RuntimeError(message)
+
+
+def caller_account():
+    if os.geteuid() != 0 or not os.environ.get("SUDO_UID"):
+        fail("This helper must be run through sudo")
+    try:
+        account = pwd.getpwuid(int(os.environ["SUDO_UID"]))
+    except (KeyError, ValueError) as error:
+        raise RuntimeError("Could not identify the calling account") from error
+    if account.pw_uid == 0:
+        fail("Root cannot manage Pi Console service units")
+    return account
+
+
+def validate_unit(unit):
+    if not UNIT_PATTERN.fullmatch(unit):
+        fail("Invalid systemd service unit name")
+    return unit
+
+
+def load_state():
+    STATE_DIRECTORY.mkdir(mode=0o755, parents=True, exist_ok=True)
+    if STATE_FILE.is_symlink():
+        fail("Managed service state must not be a symbolic link")
+    try:
+        units = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"Could not read managed service state: {error}") from error
+    if not isinstance(units, dict) or not all(
+        isinstance(unit, str)
+        and UNIT_PATTERN.fullmatch(unit)
+        and isinstance(digest, str)
+        and re.fullmatch(r"[a-f0-9]{64}", digest)
+        for unit, digest in units.items()
+    ):
+        fail("Managed service state is invalid")
+    return units
+
+
+def save_state(units):
+    STATE_DIRECTORY.mkdir(mode=0o755, parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=STATE_DIRECTORY,
+        prefix=".managed-services-",
+        delete=False,
+    ) as temporary:
+        temporary_path = Path(temporary.name)
+        json.dump(units, temporary, sort_keys=True)
+        temporary.write("\n")
+    temporary_path.chmod(0o600)
+    temporary_path.replace(STATE_FILE)
+
+
+def service_source(account, directory, unit):
+    source_directory = Path(directory).resolve(strict=True)
+    home = Path(account.pw_dir).resolve()
+    try:
+        source_directory.relative_to(home)
+    except ValueError as error:
+        raise RuntimeError("Service files must be inside the calling account's home directory") from error
+    if source_directory.name != "service":
+        fail("Service files must be in a directory named service")
+    directory_info = source_directory.stat()
+    if not stat.S_ISDIR(directory_info.st_mode) or directory_info.st_uid != account.pw_uid:
+        fail("Service directory must be owned by the calling account")
+    source = source_directory / validate_unit(unit)
+    if source.is_symlink():
+        fail("Service files must not be symbolic links")
+    try:
+        source_info = source.stat()
+    except FileNotFoundError as error:
+        raise RuntimeError("Service file not found") from error
+    if not stat.S_ISREG(source_info.st_mode) or source_info.st_uid != account.pw_uid:
+        fail("Service file must be a regular file owned by the calling account")
+    if source_info.st_size > MAX_UNIT_BYTES:
+        fail(f"Service files must be {MAX_UNIT_BYTES} bytes or smaller")
+    return source
+
+
+def systemctl(*arguments):
+    result = subprocess.run(
+        ["/usr/bin/systemctl", *arguments],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode:
+        detail = result.stderr.strip() or result.stdout.strip() or "systemctl command failed"
+        fail(detail)
+
+
+def write_unit(destination, content):
+    with tempfile.NamedTemporaryFile(dir=SYSTEMD_DIRECTORY, prefix=".rpi-utils-", delete=False) as temp:
+        temporary_path = Path(temp.name)
+        temp.write(content)
+    temporary_path.chmod(0o644)
+    temporary_path.replace(destination)
+
+
+def install(account, directory, unit):
+    source = service_source(account, directory, unit)
+    original_units = load_state()
+    units = dict(original_units)
+    if unit in units:
+        fail("Service is already installed")
+    destination = SYSTEMD_DIRECTORY / unit
+    content = source.read_bytes()
+    destination_exists = destination.exists() or destination.is_symlink()
+    if destination.is_symlink():
+        fail("System service path must not be a symbolic link")
+    if destination_exists:
+        if not destination.is_file() or destination.read_bytes() != content:
+            fail("A different system service with this name already exists")
+    else:
+        write_unit(destination, content)
+    units[unit] = hashlib.sha256(content).hexdigest()
+    try:
+        save_state(units)
+        systemctl("daemon-reload")
+        systemctl("enable", "--now", unit)
+    except (OSError, RuntimeError):
+        if not destination_exists:
+            subprocess.run(
+                ["/usr/bin/systemctl", "disable", "--now", unit],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            destination.unlink(missing_ok=True)
+            subprocess.run(
+                ["/usr/bin/systemctl", "daemon-reload"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        save_state(original_units)
+        raise
+
+
+def remove(unit):
+    units = load_state()
+    if unit not in units:
+        fail("Service is not managed by Pi Console")
+    destination = SYSTEMD_DIRECTORY / unit
+    if destination.is_symlink():
+        fail("Installed service path must not be a symbolic link")
+    if destination.exists():
+        if not destination.is_file():
+            fail("Installed service path is not a regular file")
+        digest = hashlib.sha256(destination.read_bytes()).hexdigest()
+        if digest != units[unit]:
+            fail("Installed service file was modified outside Pi Console; refusing to remove it")
+    systemctl("disable", "--now", unit)
+    destination.unlink(missing_ok=True)
+    systemctl("daemon-reload")
+    subprocess.run(
+        ["/usr/bin/systemctl", "reset-failed", unit],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    save_state({item: digest for item, digest in units.items() if item != unit})
+
+
+def main(arguments):
+    if len(arguments) == 1 and arguments[0] == "list":
+        caller_account()
+        print(json.dumps(sorted(load_state())))
+        return
+    account = caller_account()
+    if len(arguments) == 3 and arguments[0] == "install":
+        install(account, arguments[1], validate_unit(arguments[2]))
+        return
+    if len(arguments) == 2 and arguments[0] == "remove":
+        remove(validate_unit(arguments[1]))
+        return
+    fail("Usage: rpi-utils-service-manager list | install SERVICE_DIR UNIT | remove UNIT")
+
+
+if __name__ == "__main__":
+    try:
+        main(sys.argv[1:])
+    except (OSError, RuntimeError) as error:
+        print(str(error), file=sys.stderr)
+        sys.exit(1)

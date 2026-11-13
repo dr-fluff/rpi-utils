@@ -104,7 +104,7 @@ Use the shared navigation on every page to open the dashboard, **Commands**, or 
 
 Each custom command can be enabled for the Telegram bot independently. Commands requiring dashboard confirmation cannot run through Telegram. Settings and custom commands are stored outside the app checkout in `~/.config/rpi-utils/settings.json`; the file includes the scripts directory, default script timeout, custom commands, and an `other_settings` object reserved for future options. Set `RPI_UTILS_SETTINGS_FILE` to use another settings file. Existing `commands.json` custom command lists are imported the first time settings are initialized.
 
-The **Settings** page also stores a JSON object for script-specific configuration. Pi Console writes it with private permissions to `script-config.json` in the configured scripts directory and sets `RPI_UTILS_SCRIPT_CONFIG_FILE` when running a custom command. Scripts can read the path from that environment variable and parse the JSON. For Python scripts:
+The **Settings** page supports named script profiles. Each profile has a JSON object for non-secret settings; assign one to a saved script from the **Commands** page. Scripts receive the selected profile name in `RPI_UTILS_SCRIPT_PROFILE` and a private JSON file path in `RPI_UTILS_SCRIPT_CONFIG_FILE`. Scripts without a profile continue to use the shared `script-config.json` for compatibility. For Python scripts:
 
 ```python
 import json
@@ -114,7 +114,7 @@ with open(os.environ["RPI_UTILS_SCRIPT_CONFIG_FILE"], encoding="utf-8") as confi
     config = json.load(config_file)
 ```
 
-The config is available to custom commands run from the dashboard or Telegram.
+The Settings page stores SSH private keys and passwords separately from profile JSON in private files with restricted permissions. Their contents are never returned by the API. A selected profile exposes their file paths as `RPI_UTILS_SCRIPT_SSH_KEY_FILE` and `RPI_UTILS_SCRIPT_PASSWORD_FILE`; scripts can read the password file or pass the key path to `ssh -i`. Keep custom scripts trusted: they run as the Pi Console service account and can access that account's profile credentials.
 
 The built-in registry provides `/help`, `/ip` (global and local addresses), `/status` (running programs), `/start program-id`, `/stop program-id`, `/restart` (reboot the Pi), and `/update` (install the latest published release and system upgrades). Program-row Start/Stop buttons use the same dispatcher. The Telegram bot does not start unless both the bot token and allowed chat IDs are configured. The installer provisions root-owned reboot, system-upgrade, and restricted system-service helpers; the service account receives passwordless sudo only for those helpers. Re-run `sudo ./install.sh` on an existing installation to enable `/restart` and repository service management. Keep the env file private (`chmod 600 ~/.config/rpi-utils/env`).
 

@@ -9,6 +9,9 @@ const commandsNotice = document.querySelector('#commands-notice');
 const scriptList = document.querySelector('#script-list');
 const scriptDirectoryLabel = document.querySelector('#scripts-directory-label');
 const commandScriptSelect = document.querySelector('#command-script');
+const commandProfileSelect = document.querySelector('#command-profile');
+const commandProfileLabel = document.querySelector('#command-profile-label');
+const commandProfileHint = document.querySelector('#command-profile-hint');
 const commandIconInput = document.querySelector('#command-icon');
 const commandIconSearch = document.querySelector('#command-icon-search');
 const commandIconGrid = document.querySelector('#command-icon-grid');
@@ -94,6 +97,12 @@ async function loadSettings() {
   const settings = await api('/api/settings');
   defaultTimeoutSeconds = settings.default_timeout_seconds;
   scriptDirectoryLabel.textContent = `Stored outside Git at ${settings.scripts_directory}`;
+  const selectedProfile = commandProfileSelect.value;
+  commandProfileSelect.replaceChildren(new Option('Use shared configuration', ''));
+  Object.keys(settings.script_profiles || {}).sort().forEach(name => {
+    commandProfileSelect.add(new Option(name, name));
+  });
+  commandProfileSelect.value = selectedProfile;
 }
 
 async function loadScripts() {
@@ -159,6 +168,7 @@ function renderCommand(command, editable) {
     executable.textContent = command.script_name
       ? `${command.script_name}${command.arguments ? ` ${command.arguments}` : ''}`
       : command.command;
+    if (command.script_profile) executable.textContent += ` · Profile: ${command.script_profile}`;
     info.append(executable);
   } else if (command.usage) {
     const usage = document.createElement('p');
@@ -246,6 +256,8 @@ function openCommandDialog(command = null) {
   commandForm.elements.description.value = command?.description || '';
   selectCommandIcon(command?.icon || 'bolt');
   commandScriptSelect.value = command?.script_name || '';
+  commandProfileSelect.value = command?.script_profile || '';
+  commandProfileSelect.value = command?.script_profile || '';
   commandLine.value = command && !command.script_name ? command.command : '';
   commandForm.elements.arguments.value = command?.arguments || '';
   commandForm.elements.telegram_enabled.checked = command?.telegram_enabled || false;
@@ -328,6 +340,8 @@ function openCommandDialogForScript(script) {
 function updateCommandScriptFields() {
   const hasScript = Boolean(commandScriptSelect.value);
   commandLineLabel.hidden = hasScript;
+  commandProfileLabel.hidden = !hasScript;
+  commandProfileHint.hidden = !hasScript;
   commandLine.required = !hasScript;
   scriptArgumentsLabel.hidden = !hasScript;
 }
@@ -361,6 +375,8 @@ commandForm.addEventListener('submit', async event => {
     description: formData.get('description'),
     command: commandScriptSelect.value ? '' : formData.get('command'),
     script_name: commandScriptSelect.value || null,
+    script_profile: commandScriptSelect.value ? commandProfileSelect.value || null : null,
+    script_profile: commandScriptSelect.value ? commandProfileSelect.value || null : null,
     arguments: commandScriptSelect.value ? formData.get('arguments') : '',
     telegram_enabled: commandForm.elements.telegram_enabled.checked,
     requires_confirmation: commandForm.elements.requires_confirmation.checked,

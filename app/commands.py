@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 from app.custom_commands import CustomCommandStore, run_custom_command
 from app.programs import ProgramManager
+from app.script_profiles import ScriptProfileStore
 
 COMMANDS = (
     {
@@ -120,13 +121,11 @@ async def run_command(
         if source == "telegram" and custom["requires_confirmation"]:
             raise CommandError(f"/{name} requires confirmation; run it from the dashboard")
         try:
-            script_config_file = (
-                custom_commands.settings.script_config_path()
-                if custom_commands is not None
-                else None
+            environment = ScriptProfileStore(custom_commands.settings).execution_environment(
+                custom.get("script_profile")
             )
-            return await asyncio.to_thread(run_custom_command, custom, script_config_file)
-        except RuntimeError as error:
+            return await asyncio.to_thread(run_custom_command, custom, environment)
+        except (KeyError, OSError, RuntimeError, ValueError) as error:
             raise CommandError(str(error)) from error
     arguments = args or []
     usage = command["usage"]

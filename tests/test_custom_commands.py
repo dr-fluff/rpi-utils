@@ -198,6 +198,94 @@ with open(os.environ["RPI_UTILS_SCRIPT_CONFIG_FILE"], encoding="utf-8") as confi
         self.assertEqual(result.status_code, 200)
         self.assertEqual(result.json()["message"], "edge-pi")
 
+    def test_profile_credentials_are_private_and_available_to_assigned_script(self):
+        settings = self.client.get("/api/settings").json()
+        profile_config = {"host": "192.168.0.1", "username": "oliver"}
+        updated = self.client.put(
+            "/api/settings",
+            json={
+                "scripts_directory": settings["scripts_directory"],
+                "default_timeout_seconds": settings["default_timeout_seconds"],
+                "script_profiles": {"router": profile_config},
+            },
+        )
+        self.assertEqual(updated.status_code, 200)
+
+        private_key = "-----BEGIN OPENSSH PRIVATE KEY-----\ntest-key\n-----END OPENSSH PRIVATE KEY-----\n"
+        password = "router-test-password"
+        credentials = self.client.put(
+            "/api/script-profiles/router/credentials",
+            json={"private_key": private_key, "password": password},
+        )
+        self.assertEqual(credentials.status_code, 200)
+        self.assertNotIn(password, credentials.text)
+        self.assertNotIn(private_key, credentials.text)
+
+        secret_directory = custom_commands.settings.path.parent / "script-secrets" / "router"
+        self.assertEqual(secret_directory.parent.stat().st_mode & 0o777, 0o700)
+        self.assertEqual((secret_directory / "ssh_private_key").stat().st_mode & 0o777, 0o600)
+        self.assertEqual((secret_directory / "password").stat().st_mode & 0o777, 0o600)
+        self.assertNotIn(password, self.client.get("/api/settings").text)
+        self.assertNotIn(private_key, self.client.get("/api/script-profiles").text)
+
+        script = """#!/usr/bin/env python3
+import json
+import os
+from pathlib import Path
+with open(os.environ["RPI_UTILS_SCRIPT_CONFIG_FILE"], encoding="utf-8") as config_file:
+    config = json.load(config_file)
+assert config["host"] == "192.168.0.1"
+assert os.environ["RPI_UTILS_SCRIPT_PROFILE"] == "router"
+assert Path(os.environ["RPI_UTILS_SCRIPT_SSH_KEY_FILE"]).is_file()
+assert Path(os.environ["RPI_UTILS_SCRIPT_PASSWORD_FILE"]).read_text() == "router-test-password"
+print("profile loaded")
+"""
+        self.client.put("/api/scripts/router-check.py", json={"content": script})
+        command = self.client.post(
+            "/api/custom-commands",
+            json={
+                "name": "router_check",
+                "description": "Check router profile",
+                "script_name": "router-check.py",
+                "script_profile": "router",
+            },
+        )
+        self.assertEqual(command.status_code, 201)
+        self.assertEqual(command.json()["script_profile"], "router")
+        remove_profile = self.client.put(
+            "/api/settings",
+            json={
+                "scripts_directory": settings["scripts_directory"],
+                "default_timeout_seconds": settings["default_timeout_seconds"],
+                "script_profiles": {},
+            },
+        )
+        self.assertEqual(remove_profile.status_code, 400)
+        result = self.client.post("/api/commands/router_check", json={"args": []})
+
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.json()["message"], "profile loaded")
+
+    def test_profile_rejects_public_keys_and_secrets_in_json(self):
+        settings = self.client.get("/api/settings").json()
+        profile_settings = {
+            "scripts_directory": settings["scripts_directory"],
+            "default_timeout_seconds": settings["default_timeout_seconds"],
+            "script_profiles": {"router": {"host": "192.168.0.1"}},
+        }
+        self.assertEqual(self.client.put("/api/settings", json=profile_settings).status_code, 200)
+
+        public_key = self.client.put(
+            "/api/script-profiles/router/credentials",
+            json={"private_key": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ== router"},
+        )
+        self.assertEqual(public_key.status_code, 400)
+
+        for unsafe_config in ({"password": "do-not-store-here"}, {"ssh_key": "private-key-data"}):
+            profile_settings["script_profiles"] = {"router": unsafe_config}
+            response = self.client.put("/api/settings", json=profile_settings)
+            self.assertEqual(response.status_code, 400)
+
     def test_script_directory_cannot_be_inside_checkout(self):
         response = self.client.put(
             "/api/settings",

@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/static/vendor/xterm.css">
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
-  <link rel="stylesheet" href="/static/styles.css?v=14">
+  <link rel="stylesheet" href="/static/styles.css?v=16">
   <script src="/static/vendor/xterm.js" defer></script>
   <script src="/static/vendor/addon-fit.js" defer></script>
   <script src="/static/navigation.js?v=1" defer></script>
@@ -62,13 +62,13 @@
     </section>
 
     <section class="overview" aria-label="Device overview">
-      <div class="overview-item"><span class="metric-label">PROGRAMS</span><strong id="program-count">0/0</strong><span class="metric-note">running / total</span></div>
-      <div class="overview-item"><span class="metric-label">SERVICES</span><strong id="service-count">0/0</strong><span class="metric-note">running / total</span></div>
-      <div class="overview-item"><span class="metric-label">DOCKER CONTAINERS</span><strong id="container-count">0/0</strong><span class="metric-note">running / total</span></div>
+      <a class="overview-item overview-link" href="#programs" aria-label="View programs"><span class="metric-label">PROGRAMS</span><strong id="program-count">0/0</strong><span class="metric-note">running / total</span></a>
+      <a class="overview-item overview-link" href="#services" aria-label="View services"><span class="metric-label">SERVICES</span><strong id="service-count">0/0</strong><span class="metric-note">running / total</span></a>
+      <a class="overview-item overview-link" href="#containers" aria-label="View Docker containers"><span class="metric-label">DOCKER CONTAINERS</span><strong id="container-count">0/0</strong><span class="metric-note">running / total</span></a>
       <div class="overview-item ip-item"><span class="metric-label">GLOBAL IP</span><strong id="global-ip">Checking…</strong><button id="ip-button" class="text-action icon-button" title="Force refresh global IP" aria-label="Force refresh global IP"><span class="fa-icon fa-arrows-rotate" aria-hidden="true"></span></button></div>
     </section>
 
-    <section class="program-section">
+    <section id="programs" class="program-section">
       <div class="section-heading">
         <div><p class="eyebrow">PROCESS MANAGEMENT</p><h2>Your programs</h2></div>
         <div class="masthead-actions">
@@ -77,9 +77,9 @@
         </div>
       </div>
       <div id="program-list" class="program-list" aria-live="polite"></div>
-      <div class="service-section">
+      <section id="services" class="service-section" aria-labelledby="services-heading">
         <div class="section-heading">
-          <div><p class="eyebrow">SYSTEMD</p><h2>Services</h2></div>
+          <div><p class="eyebrow">SYSTEMD</p><h2 id="services-heading">Services</h2></div>
           <div class="masthead-actions">
             <button class="button button-quiet icon-button" id="find-running-services-button" type="button" title="Find running services" aria-label="Find running services"><span class="fa-icon fa-list-check" aria-hidden="true"></span></button>
             <button class="button button-quiet icon-button" id="manage-repo-services-button" type="button" title="Manage service files from scripts" aria-label="Manage service files from scripts"><span class="fa-icon fa-file-import" aria-hidden="true"></span></button>
@@ -87,17 +87,17 @@
           </div>
         </div>
         <div id="service-list" class="program-list" aria-live="polite"></div>
-      </div>
-      <div class="docker-section">
+      </section>
+      <section id="containers" class="docker-section" aria-labelledby="containers-heading">
         <div class="section-heading">
-          <div><p class="eyebrow">DOCKER / COMPOSE</p><h2>Containers</h2></div>
+          <div><p class="eyebrow">DOCKER / COMPOSE</p><h2 id="containers-heading">Containers</h2></div>
           <div class="masthead-actions">
             <button class="button button-quiet icon-button" id="import-docker-container-button" type="button" title="Import running container" aria-label="Import running container"><span class="fa-icon fa-file-import" aria-hidden="true"></span></button>
             <button class="button button-accent icon-button" id="add-docker-project-button" type="button" title="Add Docker Compose project" aria-label="Add Docker Compose project"><span class="fa-icon fa-plus" aria-hidden="true"></span></button>
           </div>
         </div>
         <div id="docker-project-list" class="program-list" aria-live="polite"></div>
-      </div>
+      </section>
       <p id="notice" class="notice" role="status"></p>
     </section>
 

@@ -49,6 +49,7 @@ from app.docker_projects import (
     DockerUnavailableError,
 )
 from app.programs import ProgramManager
+from app.script_profiles import ScriptProfileStore
 from app.services import ServiceManager, ServiceUnitManager
 from app.terminal import terminal_socket
 from app.telegram.bot import telegram_polling
@@ -63,6 +64,7 @@ docker_projects = DockerProjectManager()
 user_settings = UserSettingsStore()
 service_units = ServiceUnitManager(user_settings.scripts_directory)
 custom_commands = CustomCommandStore(user_settings)
+script_profiles = ScriptProfileStore(user_settings)
 telegram_settings = TelegramSettingsStore()
 
 
@@ -118,6 +120,7 @@ class CustomCommandInput(BaseModel):
     description: str = Field(min_length=1, max_length=120)
     command: str = Field(default="", max_length=1000)
     script_name: str | None = Field(default=None, max_length=68)
+    script_profile: str | None = Field(default=None, max_length=32)
     arguments: str = Field(default="", max_length=1000)
     telegram_enabled: bool = False
     requires_confirmation: bool = False
@@ -129,6 +132,14 @@ class UserSettingsInput(BaseModel):
     scripts_directory: str = Field(min_length=1, max_length=1024)
     default_timeout_seconds: int = Field(ge=1, le=300)
     script_config: dict[str, Any] | None = None
+    script_profiles: dict[str, dict[str, Any]] | None = None
+
+
+class ScriptProfileCredentialsInput(BaseModel):
+    private_key: str = Field(default="", max_length=65536)
+    password: str = Field(default="", max_length=4096)
+    clear_private_key: bool = False
+    clear_password: bool = False
 
 
 class TelegramSettingsInput(BaseModel):
@@ -473,6 +484,7 @@ async def get_settings(response: Response) -> dict:
         "scripts_directory": settings["scripts_directory"],
         "default_timeout_seconds": settings["default_timeout_seconds"],
         "script_config": settings["script_config"],
+        "script_profiles": settings["script_profiles"],
     }
 
 
@@ -480,11 +492,28 @@ async def get_settings(response: Response) -> dict:
 async def update_settings(settings: UserSettingsInput, response: Response) -> dict:
     response.headers["Cache-Control"] = "no-store"
     try:
+        current_profiles = user_settings.get()["script_profiles"]
+        profiles_to_save = settings.script_profiles
+        if profiles_to_save is not None:
+            script_profiles.validate_profiles(profiles_to_save)
+            removed_profiles = set(current_profiles) - set(profiles_to_save)
+            referenced_profiles = {
+                command.get("script_profile")
+                for command in custom_commands.list()
+                if command.get("script_profile")
+            }
+            if removed_profiles & referenced_profiles:
+                raise ValueError("Remove script profile references from commands before deleting those profiles")
         updated = user_settings.update(
             settings.scripts_directory,
             settings.default_timeout_seconds,
             settings.script_config,
+            profiles_to_save,
         )
+        if profiles_to_save is not None:
+            for name in set(current_profiles) - set(profiles_to_save):
+                script_profiles.delete_credentials(name)
+                script_profiles.remove_config(name)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except RuntimeError as error:
@@ -495,7 +524,41 @@ async def update_settings(settings: UserSettingsInput, response: Response) -> di
         "scripts_directory": updated["scripts_directory"],
         "default_timeout_seconds": updated["default_timeout_seconds"],
         "script_config": updated["script_config"],
+        "script_profiles": updated["script_profiles"],
     }
+
+
+@app.get("/api/script-profiles")
+async def list_script_profiles(response: Response) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return {"profiles": script_profiles.list()}
+    except (OSError, RuntimeError, ValueError) as error:
+        raise HTTPException(status_code=500, detail=f"Could not read script profiles: {error}") from error
+
+
+@app.put("/api/script-profiles/{profile_name}/credentials")
+async def save_script_profile_credentials(
+    profile_name: str,
+    credentials: ScriptProfileCredentialsInput,
+    response: Response,
+) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        status = script_profiles.save_credentials(
+            profile_name,
+            credentials.private_key,
+            credentials.password,
+            credentials.clear_private_key,
+            credentials.clear_password,
+        )
+        return {"name": profile_name, **status}
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except OSError as error:
+        raise HTTPException(status_code=500, detail=f"Could not save credentials: {error}") from error
 
 
 @app.get("/api/telegram-settings")
@@ -598,6 +661,7 @@ async def add_custom_command(command: CustomCommandInput) -> dict:
             command.timeout_seconds,
             set(COMMAND_BY_NAME),
             command.icon,
+            command.script_profile,
         )
         resolved = custom_commands.get(result["name"])
         if resolved is None:
@@ -624,6 +688,7 @@ async def edit_custom_command(command_name: str, command: CustomCommandInput) ->
             command.timeout_seconds,
             set(COMMAND_BY_NAME),
             command.icon,
+            command.script_profile,
         )
         resolved = custom_commands.get(result["name"])
         if resolved is None:

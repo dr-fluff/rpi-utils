@@ -7,9 +7,9 @@
   <title>Settings · Pi Console</title>
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
-  <link rel="stylesheet" href="/static/styles.css?v=12">
+  <link rel="stylesheet" href="/static/styles.css?v=14">
   <script src="/static/navigation.js?v=1" defer></script>
-  <script src="/static/settings.js?v=6" defer></script>
+  <script src="/static/settings.js?v=8" defer></script>
 </head>
 <body>
   <div id="site-navigation" data-page="settings"></div>
@@ -18,26 +18,44 @@
       <div><p class="eyebrow">CONTROL SURFACE / DEVICE CONFIGURATION</p><h1>Device<br><span>settings.</span></h1></div>
     </section>
     <p class="commands-intro">Configure private script storage and the Telegram bot that controls this device.</p>
+    <nav class="settings-section-nav" aria-label="Settings sections">
+      <a href="#script-storage">Scripts</a>
+      <a href="#script-profiles">Profiles</a>
+      <a href="#telegram-settings">Telegram</a>
+      <a href="#account-settings">Account</a>
+    </nav>
     <div class="settings-page-actions">
       <button id="settings-back-button" class="button button-quiet icon-button" type="button" title="Back" aria-label="Back"><span class="fa-icon fa-arrow-left" aria-hidden="true"></span></button>
       <button id="settings-cancel-button" class="button button-quiet icon-button" type="button" title="Discard changes" aria-label="Discard changes" hidden><span class="fa-icon fa-xmark" aria-hidden="true"></span></button>
-      <button class="button button-dark icon-button" type="submit" form="settings-form" title="Save settings" aria-label="Save settings"><span class="fa-icon fa-floppy-disk" aria-hidden="true"></span></button>
+      <button id="settings-save-button" class="button button-dark icon-button" type="submit" form="settings-form" title="Save settings" aria-label="Save settings" disabled><span class="fa-icon fa-floppy-disk" aria-hidden="true"></span></button>
     </div>
 
     <form id="settings-form" class="settings-form">
-      <section class="commands-group" aria-labelledby="device-settings-heading">
+      <section id="script-storage" class="commands-group" aria-labelledby="device-settings-heading">
         <div class="section-heading"><div><p class="eyebrow">SCRIPTS</p><h2 id="device-settings-heading">Device settings</h2></div></div>
         <label for="scripts-directory-input">Scripts directory</label>
         <input id="scripts-directory-input" name="scripts_directory" required maxlength="1024" spellcheck="false">
         <p class="field-hint">Use an absolute path outside the Git checkout. Pi Console creates the directory if it does not exist. Commands using saved scripts look for their script by filename in this directory.</p>
         <label for="default-timeout-input">Default script timeout (seconds)</label>
         <input id="default-timeout-input" name="default_timeout_seconds" type="number" min="1" max="300" required>
-        <label for="script-config-input">Script configuration (JSON)</label>
-        <textarea id="script-config-input" name="script_config" class="script-config-input" maxlength="65536" spellcheck="false" placeholder='{"device_name":"raspberry-pi"}'></textarea>
-        <p class="field-hint">Scripts receive the private config file path in <code>RPI_UTILS_SCRIPT_CONFIG_FILE</code>. The file contains this JSON object.</p>
+        <details class="settings-advanced">
+          <summary>Shared configuration for unassigned scripts</summary>
+          <label for="script-config-input">Shared configuration (JSON)</label>
+          <textarea id="script-config-input" name="script_config" class="script-config-input" maxlength="65536" spellcheck="false" placeholder='{"device_name":"raspberry-pi"}'></textarea>
+          <p class="field-hint">Scripts without a profile receive this file path in <code>RPI_UTILS_SCRIPT_CONFIG_FILE</code>.</p>
+        </details>
       </section>
 
-      <section class="commands-group" aria-labelledby="telegram-settings-heading">
+      <section id="script-profiles" class="commands-group" aria-labelledby="script-profiles-heading">
+        <div class="section-heading">
+          <div><p class="eyebrow">PER-SCRIPT SETTINGS</p><h2 id="script-profiles-heading">Script profiles</h2></div>
+          <button id="add-script-profile" class="button button-accent icon-button" type="button" title="Add profile" aria-label="Add profile"><span class="fa-icon fa-plus" aria-hidden="true"></span></button>
+        </div>
+        <p class="settings-description">Keep connection details with each profile. Credentials are stored in private files and are never shown again after saving.</p>
+        <div id="script-profile-list" class="script-profile-list" aria-live="polite"></div>
+      </section>
+
+      <section id="telegram-settings" class="commands-group" aria-labelledby="telegram-settings-heading">
         <div class="section-heading"><div><p class="eyebrow">REMOTE CONTROL</p><h2 id="telegram-settings-heading">Telegram</h2></div><span id="telegram-status" class="command-badge">Checking configuration</span></div>
         <p class="settings-description">The bot token and authorized chat IDs are saved in the private service environment file. The saved token is never sent back to this page.</p>
         <label for="telegram-bot-token">Bot token</label>
@@ -70,5 +88,20 @@
     <p id="settings-notice" class="notice" role="status"></p>
     <footer><span>PI CONSOLE <span class="footer-separator">·</span> PRIVATE BY DESIGN</span><span>AUTHORIZED ACCESS ONLY</span></footer>
   </main>
+  <dialog id="script-profile-dialog" class="script-profile-dialog">
+    <form id="script-profile-form">
+      <div class="dialog-heading"><div><p class="eyebrow">SCRIPT PROFILE</p><h2 id="script-profile-dialog-title">Add profile</h2></div><button id="close-script-profile-dialog" class="close-button icon-button" type="button" title="Close" aria-label="Close"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button></div>
+      <label for="script-profile-name">Profile name<input id="script-profile-name" name="name" required maxlength="32" pattern="[a-z][a-z0-9_\-]*" placeholder="router"></label>
+      <label for="script-profile-config">Settings (JSON)<textarea id="script-profile-config" name="config" class="script-profile-config" maxlength="65536" spellcheck="false" placeholder='{"host":"192.168.0.1","username":"oliver"}'></textarea></label>
+      <p class="field-hint">Do not put passwords, tokens, or private keys in this JSON.</p>
+      <label for="script-profile-private-key">SSH private key<input id="script-profile-private-key" type="file" accept=".pem,.key,*" autocomplete="off"></label>
+      <p id="script-profile-key-status" class="field-hint">No key saved.</p>
+      <label for="script-profile-password">SSH password<input id="script-profile-password" type="password" maxlength="4096" autocomplete="new-password" placeholder="Leave blank to keep the saved password"></label>
+      <label id="clear-profile-key-option" class="check-option" hidden><input id="clear-profile-key" type="checkbox"> Remove saved SSH key</label>
+      <label id="clear-profile-password-option" class="check-option" hidden><input id="clear-profile-password" type="checkbox"> Remove saved password</label>
+      <p id="script-profile-form-error" class="login-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button id="delete-script-profile" type="button" class="button button-quiet icon-button remove-program-action" title="Delete profile" aria-label="Delete profile" hidden><span class="fa-icon fa-trash" aria-hidden="true"></span></button><button id="cancel-script-profile" type="button" class="button button-quiet icon-button" title="Cancel" aria-label="Cancel"><span class="fa-icon fa-xmark" aria-hidden="true"></span></button><button class="button button-dark icon-button" type="submit" title="Apply profile changes" aria-label="Apply profile changes"><span class="fa-icon fa-check" aria-hidden="true"></span></button></div>
+    </form>
+  </dialog>
 </body>
 </html>

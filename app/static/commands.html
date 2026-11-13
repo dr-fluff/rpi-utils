@@ -7,10 +7,10 @@
   <title>Commands · Pi Console</title>
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
-  <link rel="stylesheet" href="/static/styles.css?v=13">
+  <link rel="stylesheet" href="/static/styles.css?v=15">
   <script src="/static/navigation.js?v=1" defer></script>
   <script src="/static/command-output.js?v=3" defer></script>
-  <script src="/static/commands.js?v=8" defer></script>
+  <script src="/static/commands.js?v=11" defer></script>
 </head>
 <body>
   <div id="site-navigation" data-page="commands"></div>
@@ -50,6 +50,8 @@
         <div id="command-icon-grid" class="command-icon-grid" role="group" aria-label="Choose a command icon"></div>
       </div>
       <label>Script<select id="command-script" name="script_name"><option value="">Use a direct executable instead</option></select></label>
+      <label id="command-profile-label" hidden>Settings profile<select id="command-profile" name="script_profile"><option value="">Use shared configuration</option></select></label>
+      <p class="field-hint" id="command-profile-hint" hidden>Profiles are managed in <a href="/settings#script-profiles">Settings</a>. Scripts receive the selected profile path and credentials through environment variables.</p>
       <label id="command-line-label">Program and arguments<input id="command-line" name="command" maxlength="1000" placeholder="/usr/bin/example --option"></label>
       <label id="script-arguments-label" hidden>Script arguments<input name="arguments" maxlength="1000" placeholder="optional arguments"></label>
       <p class="field-hint">Scripts run directly from your private scripts directory as the dashboard service user. Script files must be executable text files with a shebang.</p>

@@ -1,6 +1,7 @@
 const settingsForm = document.querySelector('#settings-form');
 const settingsBackButton = document.querySelector('#settings-back-button');
 const settingsCancelButton = document.querySelector('#settings-cancel-button');
+const settingsSaveButton = document.querySelector('#settings-save-button');
 const scriptsDirectoryInput = document.querySelector('#scripts-directory-input');
 const defaultTimeoutInput = document.querySelector('#default-timeout-input');
 const scriptConfigInput = document.querySelector('#script-config-input');
@@ -17,6 +18,25 @@ const accountSettingsNotice = document.querySelector('#account-settings-notice')
 const changePasswordSubmit = document.querySelector('#change-password-submit');
 const newPasswordInput = document.querySelector('#settings-new-password');
 const confirmPasswordInput = document.querySelector('#settings-confirm-password');
+const scriptProfileList = document.querySelector('#script-profile-list');
+const scriptProfileDialog = document.querySelector('#script-profile-dialog');
+const scriptProfileForm = document.querySelector('#script-profile-form');
+const scriptProfileNameInput = document.querySelector('#script-profile-name');
+const scriptProfileConfigInput = document.querySelector('#script-profile-config');
+const scriptProfilePrivateKeyInput = document.querySelector('#script-profile-private-key');
+const scriptProfilePasswordInput = document.querySelector('#script-profile-password');
+const scriptProfileKeyStatus = document.querySelector('#script-profile-key-status');
+const scriptProfileFormError = document.querySelector('#script-profile-form-error');
+const clearProfileKeyOption = document.querySelector('#clear-profile-key-option');
+const clearProfilePasswordOption = document.querySelector('#clear-profile-password-option');
+const clearProfileKeyInput = document.querySelector('#clear-profile-key');
+const clearProfilePasswordInput = document.querySelector('#clear-profile-password');
+const profileCredentialStatus = new Map();
+let scriptProfiles = {};
+let savedScriptProfiles = {};
+let pendingProfileCredentials = {};
+let profileEditorName = null;
+let profileEditorDirty = false;
 let savedDeviceSettings = null;
 let savedTelegramChatIds = null;
 let settingsLoaded = false;
@@ -46,13 +66,24 @@ function currentDeviceSettings() {
   };
 }
 
-function hasUnsavedChanges() {
-  if (!settingsLoaded) return false;
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function hasUnsavedSettings() {
   const current = currentDeviceSettings();
-  return Object.keys(current).some(key => current[key] !== savedDeviceSettings[key])
+  return Object.keys(current).some(key => current[key] !== savedDeviceSettings?.[key])
     || telegramChatIdsInput.value !== savedTelegramChatIds
     || telegramBotTokenInput.value !== ''
     || clearTelegramTokenInput.checked
+    || JSON.stringify(scriptProfiles) !== JSON.stringify(savedScriptProfiles)
+    || Object.keys(pendingProfileCredentials).length > 0;
+}
+
+function hasUnsavedChanges() {
+  if (!settingsLoaded) return false;
+  return hasUnsavedSettings()
+    || profileEditorDirty
     || newPasswordInput.value !== ''
     || confirmPasswordInput.value !== '';
 }
@@ -60,12 +91,15 @@ function hasUnsavedChanges() {
 function updateUnsavedActions() {
   const unsaved = hasUnsavedChanges();
   settingsCancelButton.hidden = !unsaved;
+  settingsSaveButton.disabled = !hasUnsavedSettings();
 }
 
 function discardChanges() {
   scriptsDirectoryInput.value = savedDeviceSettings.scripts_directory;
   defaultTimeoutInput.value = savedDeviceSettings.default_timeout_seconds;
   scriptConfigInput.value = savedDeviceSettings.script_config;
+  scriptProfiles = clone(savedScriptProfiles);
+  pendingProfileCredentials = {};
   telegramChatIdsInput.value = savedTelegramChatIds;
   telegramBotTokenInput.value = '';
   telegramBotTokenInput.disabled = false;
@@ -73,6 +107,9 @@ function discardChanges() {
   changePasswordForm.reset();
   changePasswordError.hidden = true;
   telegramFormError.hidden = true;
+  scriptProfileDialog.close();
+  profileEditorDirty = false;
+  renderScriptProfiles();
   updateUnsavedActions();
   showNotice('Unsaved changes discarded.');
 }
@@ -82,7 +119,16 @@ async function loadDeviceSettings() {
   scriptsDirectoryInput.value = settings.scripts_directory;
   defaultTimeoutInput.value = settings.default_timeout_seconds;
   scriptConfigInput.value = JSON.stringify(settings.script_config, null, 2);
+  scriptProfiles = clone(settings.script_profiles || {});
+  savedScriptProfiles = clone(scriptProfiles);
   savedDeviceSettings = currentDeviceSettings();
+}
+
+async function loadScriptProfiles() {
+  const { profiles } = await api('/api/script-profiles');
+  profileCredentialStatus.clear();
+  profiles.forEach(profile => profileCredentialStatus.set(profile.name, profile));
+  renderScriptProfiles();
 }
 
 async function loadTelegramSettings() {
@@ -118,16 +164,38 @@ settingsForm.addEventListener('submit', async event => {
         scripts_directory: formData.get('scripts_directory'),
         default_timeout_seconds: Number(formData.get('default_timeout_seconds')),
         script_config: scriptConfig,
+        script_profiles: scriptProfiles,
       }),
     });
     scriptsDirectoryInput.value = savedSettings.scripts_directory;
     defaultTimeoutInput.value = savedSettings.default_timeout_seconds;
     scriptConfigInput.value = JSON.stringify(savedSettings.script_config, null, 2);
     savedDeviceSettings = currentDeviceSettings();
+    savedScriptProfiles = clone(savedSettings.script_profiles);
+    pendingProfileCredentials = Object.fromEntries(
+      Object.entries(pendingProfileCredentials).filter(([name]) => name in scriptProfiles),
+    );
   } catch (error) {
     showNotice(error.message, true);
     return;
   }
+
+  for (const [name, credentials] of Object.entries(pendingProfileCredentials)) {
+    try {
+      const savedCredentials = await api(`/api/script-profiles/${encodeURIComponent(name)}/credentials`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(credentials),
+      });
+      profileCredentialStatus.set(name, { ...profileCredentialStatus.get(name), ...savedCredentials });
+      delete pendingProfileCredentials[name];
+    } catch (error) {
+      showNotice(`Settings saved, but credentials for ${name} were not saved: ${error.message}`, true);
+      updateUnsavedActions();
+      return;
+    }
+  }
+  renderScriptProfiles();
 
   const telegramChanged = telegramChatIdsInput.value !== savedTelegramChatIds
     || telegramBotTokenInput.value !== ''
@@ -221,6 +289,163 @@ settingsBackButton.addEventListener('click', () => {
 
 settingsCancelButton.addEventListener('click', discardChanges);
 
+function renderScriptProfiles() {
+  scriptProfileList.replaceChildren();
+  const names = Object.keys(scriptProfiles).sort();
+  if (!names.length) {
+    const empty = document.createElement('p');
+    empty.className = 'commands-empty';
+    empty.textContent = 'No script profiles yet.';
+    scriptProfileList.append(empty);
+    return;
+  }
+  names.forEach(name => {
+    const item = document.createElement('article');
+    item.className = 'script-profile-item';
+    const info = document.createElement('div');
+    const title = document.createElement('strong');
+    title.textContent = name;
+    const details = document.createElement('p');
+    details.className = 'field-hint';
+    const status = profileCredentialStatus.get(name) || {};
+    const pending = pendingProfileCredentials[name] || {};
+    const hasKey = pending.clear_private_key ? false : Boolean(pending.private_key || status.private_key_configured);
+    const hasPassword = pending.clear_password ? false : Boolean(pending.password || status.password_configured);
+    details.textContent = [
+      hasKey ? 'SSH key saved' : 'No SSH key',
+      hasPassword ? 'Password saved' : 'No password',
+    ].join(' · ');
+    info.append(title, details);
+    const actions = document.createElement('div');
+    actions.className = 'program-actions';
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'small-button';
+    edit.textContent = 'Edit';
+    edit.addEventListener('click', () => openScriptProfile(name));
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'small-button remove-button';
+    remove.textContent = 'Remove';
+    remove.addEventListener('click', () => removeScriptProfile(name));
+    actions.append(edit, remove);
+    item.append(info, actions);
+    scriptProfileList.append(item);
+  });
+}
+
+function openScriptProfile(name = null) {
+  profileEditorName = name;
+  profileEditorDirty = false;
+  scriptProfileForm.reset();
+  scriptProfileForm.elements.name.disabled = Boolean(name);
+  document.querySelector('#script-profile-dialog-title').textContent = name ? 'Edit profile' : 'Add profile';
+  document.querySelector('#delete-script-profile').hidden = !name;
+  scriptProfileNameInput.value = name || '';
+  scriptProfileConfigInput.value = name ? JSON.stringify(scriptProfiles[name], null, 2) : '{}';
+  scriptProfilePrivateKeyInput.value = '';
+  scriptProfilePasswordInput.value = '';
+  const status = profileCredentialStatus.get(name) || {};
+  clearProfileKeyOption.hidden = !status.private_key_configured;
+  clearProfilePasswordOption.hidden = !status.password_configured;
+  scriptProfileKeyStatus.textContent = status.private_key_configured
+    ? 'A private key is saved. Select a file to replace it.'
+    : 'No private key is saved. Do not select a .pub file.';
+  scriptProfileFormError.hidden = true;
+  scriptProfileDialog.showModal();
+  updateUnsavedActions();
+}
+
+async function applyScriptProfile(event) {
+  event.preventDefault();
+  scriptProfileFormError.hidden = true;
+  const name = scriptProfileNameInput.value.trim();
+  if (!/^[a-z][a-z0-9_-]{0,31}$/.test(name)) {
+    scriptProfileFormError.textContent = 'Use a lowercase letter followed by lowercase letters, numbers, underscores, or hyphens.';
+    scriptProfileFormError.hidden = false;
+    return;
+  }
+  if (!profileEditorName && name in scriptProfiles) {
+    scriptProfileFormError.textContent = 'A profile with this name already exists.';
+    scriptProfileFormError.hidden = false;
+    return;
+  }
+  let config;
+  try {
+    config = JSON.parse(scriptProfileConfigInput.value);
+    if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('Enter a JSON object.');
+  } catch (error) {
+    scriptProfileFormError.textContent = `Profile settings must be valid JSON: ${error.message}`;
+    scriptProfileFormError.hidden = false;
+    return;
+  }
+  const credentialChanges = { ...(pendingProfileCredentials[name] || {}) };
+  const keyFile = scriptProfilePrivateKeyInput.files[0];
+  if (keyFile) {
+    const privateKey = await keyFile.text();
+    const firstLine = privateKey.trim().split(/\r?\n/, 1)[0];
+    if (!firstLine.startsWith('-----BEGIN ') || !firstLine.includes('PRIVATE KEY-----')) {
+      scriptProfileFormError.textContent = 'Select an SSH private key file, not a .pub public key.';
+      scriptProfileFormError.hidden = false;
+      return;
+    }
+    credentialChanges.private_key = privateKey;
+    delete credentialChanges.clear_private_key;
+  }
+  if (scriptProfilePasswordInput.value) {
+    credentialChanges.password = scriptProfilePasswordInput.value;
+    delete credentialChanges.clear_password;
+  }
+  if (clearProfileKeyInput.checked) {
+    if (!keyFile) credentialChanges.clear_private_key = true;
+  }
+  if (clearProfilePasswordInput.checked) {
+    if (!scriptProfilePasswordInput.value) credentialChanges.clear_password = true;
+  }
+  scriptProfiles[name] = config;
+  if (Object.keys(credentialChanges).length) pendingProfileCredentials[name] = credentialChanges;
+  scriptProfileDialog.close();
+  profileEditorDirty = false;
+  renderScriptProfiles();
+  updateUnsavedActions();
+}
+
+function removeScriptProfile(name) {
+  if (!window.confirm(`Remove the ${name} profile and its saved credentials?`)) return false;
+  delete scriptProfiles[name];
+  pendingProfileCredentials[name] = { clear_private_key: true, clear_password: true };
+  renderScriptProfiles();
+  updateUnsavedActions();
+  return true;
+}
+
+document.querySelector('#add-script-profile').addEventListener('click', () => openScriptProfile());
+document.querySelector('#close-script-profile-dialog').addEventListener('click', () => {
+  scriptProfileDialog.close();
+  profileEditorDirty = false;
+  updateUnsavedActions();
+});
+document.querySelector('#cancel-script-profile').addEventListener('click', () => {
+  scriptProfileDialog.close();
+  profileEditorDirty = false;
+  updateUnsavedActions();
+});
+document.querySelector('#delete-script-profile').addEventListener('click', () => {
+  if (!profileEditorName || !removeScriptProfile(profileEditorName)) return;
+  scriptProfileDialog.close();
+  profileEditorDirty = false;
+  updateUnsavedActions();
+});
+scriptProfileForm.addEventListener('input', () => {
+  profileEditorDirty = true;
+  updateUnsavedActions();
+});
+scriptProfileForm.addEventListener('change', () => {
+  profileEditorDirty = true;
+  updateUnsavedActions();
+});
+scriptProfileForm.addEventListener('submit', applyScriptProfile);
+
 async function initialize() {
   const authStatus = await api('/api/auth/status');
   if (!authStatus.authenticated || authStatus.must_change_password) {
@@ -234,8 +459,9 @@ async function initialize() {
     confirmPasswordInput.disabled = true;
     changePasswordSubmit.disabled = true;
   }
-  await Promise.all([loadDeviceSettings(), loadTelegramSettings()]);
+  await Promise.all([loadDeviceSettings(), loadTelegramSettings(), loadScriptProfiles()]);
   settingsLoaded = true;
+  renderScriptProfiles();
   updateUnsavedActions();
 }
 

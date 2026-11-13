@@ -40,6 +40,7 @@ class UserSettingsStore:
             "custom_commands": [],
             "other_settings": {},
             "script_config": {},
+            "script_profiles": {},
         }
 
     def _load(self) -> dict:
@@ -66,6 +67,10 @@ class UserSettingsStore:
             raise RuntimeError("The custom_commands setting must be a JSON list")
         if not isinstance(defaults["script_config"], dict):
             raise RuntimeError("The script_config setting must be a JSON object")
+        if not isinstance(defaults["script_profiles"], dict):
+            raise RuntimeError("The script_profiles setting must be a JSON object")
+        if any(not isinstance(value, dict) for value in defaults["script_profiles"].values()):
+            raise RuntimeError("Each script profile must be a JSON object")
         return defaults
 
     def _save(self, settings: dict) -> None:
@@ -89,6 +94,7 @@ class UserSettingsStore:
             "custom_commands",
             "other_settings",
             "script_config",
+            "script_profiles",
         }
         if (
             not required_settings.issubset(persisted)
@@ -109,6 +115,7 @@ class UserSettingsStore:
         scripts_directory: str,
         default_timeout_seconds: int,
         script_config: dict | None = None,
+        script_profiles: dict | None = None,
     ) -> dict:
         if not 1 <= default_timeout_seconds <= MAX_COMMAND_TIMEOUT:
             raise ValueError(f"Default timeout must be between 1 and {MAX_COMMAND_TIMEOUT} seconds")
@@ -119,6 +126,12 @@ class UserSettingsStore:
         settings["default_timeout_seconds"] = default_timeout_seconds
         if script_config is not None:
             settings["script_config"] = self._validated_script_config(script_config)
+        if script_profiles is not None:
+            if not isinstance(script_profiles, dict) or any(
+                not isinstance(profile, dict) for profile in script_profiles.values()
+            ):
+                raise ValueError("Script profiles must be a JSON object of profile objects")
+            settings["script_profiles"] = script_profiles
         self._save(settings)
         return self.get()
 
@@ -256,6 +269,7 @@ class CustomCommandStore:
         timeout_seconds: int,
         reserved_names: set[str],
         icon: str = DEFAULT_COMMAND_ICON,
+        script_profile: str | None = None,
     ) -> dict:
         settings = self.settings.get()
         commands = settings["custom_commands"]
@@ -270,6 +284,7 @@ class CustomCommandStore:
             timeout_seconds,
             reserved_names | {item["name"] for item in commands},
             icon,
+            script_profile,
         )
         commands.append(record)
         self.settings._save(settings)
@@ -288,6 +303,7 @@ class CustomCommandStore:
         timeout_seconds: int,
         reserved_names: set[str],
         icon: str = DEFAULT_COMMAND_ICON,
+        script_profile: str | None = None,
     ) -> dict:
         settings = self.settings.get()
         commands = settings["custom_commands"]
@@ -306,6 +322,7 @@ class CustomCommandStore:
             timeout_seconds,
             reserved_names | other_names,
             icon,
+            script_profile,
         )
         existing.update(record)
         self.settings._save(settings)
@@ -340,6 +357,7 @@ class CustomCommandStore:
         timeout_seconds: int,
         reserved_names: set[str],
         icon: str = DEFAULT_COMMAND_ICON,
+        script_profile: str | None = None,
     ) -> dict:
         normalized_name = name.strip().lower()
         if not COMMAND_NAME_PATTERN.fullmatch(normalized_name):
@@ -356,6 +374,15 @@ class CustomCommandStore:
             raise ValueError("Description must be 120 characters or fewer")
         if icon not in COMMAND_ICONS:
             raise ValueError("Choose a supported command icon")
+        if script_profile:
+            if not script_name:
+                raise ValueError("A script profile can only be used with a saved script")
+            from app.script_profiles import PROFILE_NAME_PATTERN
+
+            if not PROFILE_NAME_PATTERN.fullmatch(script_profile):
+                raise ValueError("Choose a valid script profile")
+            if script_profile not in self.settings.get()["script_profiles"]:
+                raise ValueError("Script profile does not exist")
         if script_name:
             script_path = self._validated_script(script_name)
             try:
@@ -379,6 +406,7 @@ class CustomCommandStore:
             "description": normalized_description,
             "command": command_args if not script_name else [],
             "script_name": script_name or None,
+            "script_profile": script_profile or None,
             "arguments": arguments,
             "telegram_enabled": telegram_enabled,
             "requires_confirmation": requires_confirmation,
@@ -387,10 +415,13 @@ class CustomCommandStore:
         }
 
 
-def run_custom_command(command: dict, script_config_file: Path | None = None) -> dict:
+def run_custom_command(
+    command: dict,
+    environment_overrides: dict[str, str] | None = None,
+) -> dict:
     environment = os.environ.copy()
-    if script_config_file is not None:
-        environment["RPI_UTILS_SCRIPT_CONFIG_FILE"] = str(script_config_file)
+    if environment_overrides:
+        environment.update(environment_overrides)
     try:
         result = subprocess.run(
             command["command"],
